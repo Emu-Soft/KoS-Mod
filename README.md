@@ -1,0 +1,85 @@
+<h1 align="center">BH&G Kill List</h1>
+
+<p align="center">
+  <i>Better Homes & Gardens' kill-on-sight list, for WoW: Forever.</i><br>
+</p>
+
+<p align="center">
+  <a href="../../releases/latest"><b>Download the latest release</b></a> &nbsp;·&nbsp; <a href="#with-wowup-recommended"><b>Install with WowUp</b></a>
+</p>
+
+---
+
+## What it does
+
+One kill-on-sight list for the whole guild. Add someone and every guild member running the addon gets them too.
+
+- **A warning when they show up.** When a player on the list appears near you (on a nameplate, as your target or under your mouse), you get a banner, a warning sound and a line in chat with why they're on the list and who added them.
+- **The guild hears about it.** Your guildmates see "*Name* spotted by *you* in *Goldshire, Elwynn Forest*" in their chat.
+- **Nearby enemies.** A small window lists the enemy players around you, the ones on the list on top in red. Left-click a name to target them; right-click to add or remove them.
+- **Always in sync.** Anything added, changed or removed reaches every guild member online straight away. Anyone who was offline catches up a few seconds after logging in, removals included.
+- **Tooltips.** Listed players show "Kill on sight" and the reason on their tooltip.
+
+Inspired by the addon Spy.
+
+## Installing
+
+### With WowUp (recommended)
+
+[WowUp](https://wowup.io) installs the addon for you and keeps it up to date.
+
+1. Open WowUp and pick **WoW Forever** in the game dropdown at the top left.
+2. Click **Get Addons** on the left, then **Install from URL** at the top right.
+3. Paste `https://github.com/Kain-Mercer/KoS-Mod` into the box and click **Import**.
+4. Restart the game (a `/reload` isn't enough the first time).
+
+From then on, WowUp shows an update whenever a new version is released.
+
+### Manually
+
+1. Download the **BHG-Kill-List** zip from the [latest release](../../releases/latest).
+2. Unzip it. You'll get a folder called `BHG-Kill-List`.
+3. Put that folder in your WoW: Forever `Interface\AddOns` folder. The folder name must stay exactly `BHG-Kill-List`.
+4. Restart the game (a `/reload` isn't enough the first time).
+
+To update, replace the `BHG-Kill-List` folder with the one from the newest release. Your list and settings are kept.
+
+## Adding players
+
+- **Right-click** a player's name in chat, their portrait or their nameplate menu and pick **Add to BH&G Kill List**.
+- **Target them** and type `/kos add`, or click **Add target** in the list window.
+- **By name:** `/kos add Name a reason`, or **Add by name** in the list window. Players from another realm are `Name-Realm`.
+
+You'll be asked for a reason. It's optional, but it's what the whole guild sees when that player shows up.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `/kos` | Open the list: search, edit reasons, remove players, options. |
+| `/kos add [name] [reason]` | Add your target, or someone by name. |
+| `/kos remove <name>` | Take someone off the list (for everyone). |
+| `/kos reason <name> <reason>` | Change someone's reason. |
+| `/kos check <name>` | Is this player on the list? |
+| `/kos nearby` | Show or hide the nearby enemies window. |
+| `/kos options` | Open the options. |
+| `/kos sync` | Compare lists with the guild now. You shouldn't need this: it happens on its own at login. |
+| `/kos test` | Show a test warning. |
+| `/kos move` | Move the warning banner. |
+| `/kos status` | What the addon can see. Handy for bug reports. |
+
+## Options (`/kos options`)
+
+Turn each part of the warning on or off (banner, sound, chat), whether you tell the guild when you spot someone, whether you see the guild's sightings, and whether the nearby window shows every enemy player or only listed ones.
+
+## Good to know
+
+- **Everyone shares one list.** Anyone with the addon can add or remove players, and it changes for the whole guild.
+- **Sharing only works within the guild**, through the game's hidden addon messages. Nothing is sent anywhere else.
+- **In combat** the nearby window can't take new rows (the game doesn't allow it), so newcomers are counted at the bottom and get their row when combat ends. The warning works in combat either way.
+- **In instances** the game hides player names from addons, so listed players aren't spotted there.
+- `/kos status` shows a *list fingerprint*. Once everyone is in sync, it's the same for every guild member.
+
+## For developers
+
+`tests/sync_sim.lua` runs many copies of the addon against a simulated guild channel and checks that their lists always end up the same, that a big guild doesn't flood the channel, and that spotting works. Run it with `lua5.1 tests/sync_sim.lua BHG-Kill-List`. The Check workflow runs it and luacheck on every push. Releases are made with the **Publish release** workflow (Actions tab), which reads the version from the `.toc` and the notes from `CHANGELOG.md`.

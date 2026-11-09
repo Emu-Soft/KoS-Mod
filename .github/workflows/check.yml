@@ -1,0 +1,28 @@
+# Runs on every push: a Lua lint pass and the offline sync test
+# (tests/sync_sim.lua) with a few random seeds, some with throttling.
+name: Check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Lua
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.1 lua-check
+
+      - name: Lint
+        run: luacheck BHG-Kill-List
+
+      - name: Sync test
+        run: |
+          for args in "1" "2" "3 0.2" "4 0.3" "5 0.2"; do
+            echo "::group::seed $args"
+            lua5.1 tests/sync_sim.lua BHG-Kill-List $args
+            echo "::endgroup::"
+          done

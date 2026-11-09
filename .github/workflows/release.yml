@@ -1,0 +1,103 @@
+# Publish a release: Actions tab -> "Publish release" -> Run workflow.
+# Reads the version from the .toc, zips the BHG-Kill-List folder, and
+# writes the description from CHANGELOG.md (everything since
+# the previous release). Refuses if that version was already released.
+name: Publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: "Save as a draft to look over before publishing"
+        type: boolean
+        default: false
+      since:
+        description: "Optional: list changes after this version (e.g. 1.0). Blank = since the last release"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the version
+        id: version
+        run: |
+          v=$(sed -n 's/^## Version: *\([0-9.]*\).*/\1/p' BHG-Kill-List/BHG-Kill-List.toc | tr -d '\r')
+          if [ -z "$v" ]; then echo "No '## Version:' line in the .toc"; exit 1; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Version $v"
+
+      - name: Stop if this version is already released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "v${{ steps.version.outputs.version }} is already released. Bump the version first."
+            exit 1
+          fi
+
+      - name: Find the previous release
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev="${{ inputs.since }}"
+          if [ -z "$prev" ]; then
+            prev=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // ""' 2>/dev/null || true)
+          fi
+          echo "tag=$prev" >> "$GITHUB_OUTPUT"
+          echo "Previous release: ${prev:-none}"
+
+      - name: Write the release notes
+        run: python3 .github/scripts/release_notes.py "${{ steps.version.outputs.version }}" "${{ steps.previous.outputs.tag }}" > release-notes.md
+
+      - name: Build the zip
+        run: |
+          mkdir -p build
+          cp -r BHG-Kill-List build/
+          (cd build && zip -qr "../BHG-Kill-List-${{ steps.version.outputs.version }}.zip" BHG-Kill-List)
+
+      # WowUp reads release.json to know which game clients the zip is for;
+      # without it, it warns "unable to verify ... compatible". Forever is
+      # listed under every client type WowUp has (classic = Classic Era,
+      # mists = Classic and Classic Beta, bcc = Anniversary, mainline =
+      # Retail), so whichever one a player set their Forever folder up as,
+      # the install is clean. (Forever currently shows as Mists
+      # Classic Beta.) "camelot" and "forever" are guesses at the name
+      # WowUp may give Forever once it's released; WowUp ignores names it
+      # doesn't know, so they do no harm until then.
+      - name: Write release.json for WowUp
+        run: |
+          iface=$(sed -n 's/^## Interface: *\([0-9]*\).*/\1/p' BHG-Kill-List/BHG-Kill-List.toc | tr -d '\r')
+          python3 - "$iface" "${{ steps.version.outputs.version }}" <<'PY'
+          import json, sys
+          iface, version = int(sys.argv[1]), sys.argv[2]
+          flavors = ["classic", "mists", "bcc", "mainline", "camelot", "forever"]
+          data = {"releases": [{
+              "name": "BH&G Kill List",
+              "version": version,
+              "filename": f"BHG-Kill-List-{version}.zip",
+              "nolib": False,
+              "metadata": [{"flavor": f, "interface": iface} for f in flavors],
+          }]}
+          open("release.json", "w").write(json.dumps(data, indent=2))
+          PY
+          cat release.json
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          gh release create "v$v" "BHG-Kill-List-$v.zip" release.json \
+            --title "BH&G Kill List $v" \
+            --notes-file release-notes.md \
+            --target "${{ github.sha }}" \
+            ${{ inputs.draft && '--draft' || '' }}
