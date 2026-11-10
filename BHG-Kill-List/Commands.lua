@@ -47,10 +47,11 @@ local function Status()
 	local s = ns.sync
 	local peers = 0
 	for _, t in pairs(s.peers) do if GetTime() - t < 3600 then peers = peers + 1 end end
-	say(string.format("sync: %s | guild %s | sent %d, received %d, merged %d | %d queued | %d guildmates heard from in the last hour | last hello %s",
-		ns.CommRestricted() and "chat RESTRICTED right now" or "ok",
-		IsInGuild() and "yes" or "NO", s.sent, s.received, s.merged, ns.QueueLength(), peers,
+	say(string.format("sync: %s | guild %s | sent %d, failed %d, received %d, merged %d | %d queued | %d guildmates heard from in the last hour | last hello %s",
+		ns.CommRestricted() and "the game is holding messages right now" or "ok",
+		IsInGuild() and "yes" or "NO", s.sent, s.failed or 0, s.received, s.merged, ns.QueueLength(), peers,
 		s.lastHello and (math.floor(GetTime() - s.lastHello) .. "s ago") or "not yet"))
+	say("last send: " .. (s.lastResult or "none yet") .. " | client checks: " .. ns.CommChecks())
 	local digests = {}
 	for i, h in ipairs(ns.BucketHashes()) do digests[i] = ns.ToB36(h) end
 	say("list fingerprint: " .. ns.ToB36(ns.Hash(table.concat(digests, ","))) .. " (the same on every guild member's PC once they're in sync)")

@@ -2,6 +2,11 @@
 
 Newest first. Each version has up to three sections: New, Changed, Fixed. The release button builds each GitHub release's description from this file.
 
+## 1.2.2
+
+### Fixed
+- Guild sync wasn't sending on Forever: the game reports addon messages as "restricted" in the open world even though they go through, and the addon believed it. It now sends and goes by the game's answer, holding messages only when the game actually refuses them. `/kos status` shows the last answer.
+
 ## 1.2.1
 
 ### Changed

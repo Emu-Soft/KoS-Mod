@@ -58,16 +58,41 @@ end
 
 local sendQueue, sendTicker = {}, nil
 
-local function CommRestricted()
-	local ci = C_ChatInfo
-	if not ci then return true end
-	for _, name in ipairs({ "InChatMessagingLockdown", "AreOutgoingAddonChatMessagesRestricted" }) do
-		if ci[name] then
-			local ok, restricted = pcall(ci[name])
-			if ok and Plain(restricted) == true then return true end
+-- What the client's own "restricted" checks say, for /kos status only.
+-- They aren't used to hold messages back: on Forever one of them reports
+-- "restricted" in the open world while sending works fine. The answer
+-- from each send decides instead (see PumpSendQueue).
+local RESTRICTION_CHECKS = { "InChatMessagingLockdown", "AreOutgoingAddonChatMessagesRestricted" }
+function ns.CommChecks()
+	local ci, out = C_ChatInfo, {}
+	for _, name in ipairs(RESTRICTION_CHECKS) do
+		local v = "n/a"
+		if ci and ci[name] then
+			local ok, r = pcall(ci[name])
+			r = ok and Plain(r)
+			v = not ok and "error" or (r == true and "yes" or (r == false and "no" or "?"))
+		end
+		out[#out + 1] = name .. " " .. v
+	end
+	return table.concat(out, ", ")
+end
+
+-- The name of a send result ("Success", "AddonMessageThrottle", ...).
+local function ResultName(result)
+	if result == nil or result == true then return "Success" end
+	if result == false then return "Failed" end
+	local results = Enum and Enum.SendAddonMessageResult
+	if results then
+		for k, v in pairs(results) do
+			if v == result then return k end
 		end
 	end
-	return false
+	return tostring(result)
+end
+
+local blockedUntil = 0
+local function CommRestricted()
+	return GetTime() < blockedUntil
 end
 ns.CommRestricted = CommRestricted
 
@@ -86,13 +111,17 @@ local function PumpSendQueue()
 	if CommRestricted() or not IsInGuild() then return end -- keep the queue; try again next tick
 	local item = sendQueue[1]
 	local ok, result = pcall(SendFunc(), COMM_PREFIX, item.text, CHANNEL)
-	local results = Enum and Enum.SendAddonMessageResult
-	if ok and results and result ~= nil
-		and (result == results.AddonMessageThrottle or result == results.ChannelThrottle) then
+	local name = ok and ResultName(Plain(result)) or "Error"
+	stats.lastResult = name
+	if name:find("Throttle") then
 		return -- throttled: keep it at the head and retry next tick
 	end
+	if name:find("Lockdown") or name:find("Restrict") or name:find("Disallow") then
+		blockedUntil = GetTime() + 5 -- the game is holding addon messages: keep the queue, try again in a bit
+		return
+	end
 	table.remove(sendQueue, 1)
-	stats.sent = stats.sent + 1
+	if name == "Success" then stats.sent = stats.sent + 1 else stats.failed = (stats.failed or 0) + 1 end
 end
 
 -- bucket: which list bucket a message belongs to, so the rest of it can

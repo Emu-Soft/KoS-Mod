@@ -92,8 +92,13 @@ local function MakeEnv(c)
     },
     C_ChatInfo = {
       RegisterAddonMessagePrefix = function() end,
+      -- Forever's client says "restricted" in the open world while
+      -- sending works, so the addon must go by the send result instead.
+      AreOutgoingAddonChatMessagesRestricted = function() return true end,
+      InChatMessagingLockdown = function() return LOCKDOWN == true end,
       SendAddonMessage = function(prefix, text, channel)
         assert(#text <= 255, "message too long: " .. #text)
+        if LOCKDOWN then return 11 end
         if THROTTLE and math.random() < THROTTLE then return 3 end
         assert(channel == "GUILD")
         totalMessages = totalMessages + 1
@@ -102,7 +107,7 @@ local function MakeEnv(c)
         return 0
       end,
     },
-    Enum = { SendAddonMessageResult = { Success = 0, AddonMessageThrottle = 3, ChannelThrottle = 8 } },
+    Enum = { SendAddonMessageResult = { Success = 0, AddonMessageThrottle = 3, ChannelThrottle = 8, AddOnMessageLockdown = 11 } },
   }
   base._G = env
   setmetatable(env, { __index = base })
@@ -256,6 +261,16 @@ Check(Has(B, "Livegank") and Has(C, "Livegank"), "a new add reached Bob and Caro
 B.ns.Remove(B.ns.Key("Horde3", "Forever")) Run(5)
 Check(not Has(A, "Horde3") and not Has(C, "Horde3"), "a removal reached Alice and Carol")
 Check(AllSame(), "all three in sync")
+
+-- The game holding messages (an encounter): nothing is lost.
+LOCKDOWN = true
+Add(A, "Heldback", "sent during a lockdown") Run(20)
+Check(not Has(B, "Heldback"), "while the game holds messages, nothing goes out")
+Check(A.ns.QueueLength() > 0, "and the add waits in the queue")
+LOCKDOWN = nil
+Run(10)
+Check(Has(B, "Heldback") and Has(C, "Heldback"), "once it lets go, the add reaches everyone")
+Check(AllSame(), "all three in sync again")
 
 ---------------------------------------------------------------- scenario 3
 print("== 3. a removal made while someone is offline sticks")
