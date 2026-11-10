@@ -2,6 +2,12 @@
 
 Newest first. Each version has up to three sections: New, Changed, Fixed. The release button builds each GitHub release's description from this file.
 
+## 1.2.1
+
+### Changed
+- Enemies are spotted farther away: nameplates now appear as far away as the game allows (the addon asks for 100 yards and the game sets its own limit). Turn it off in the options and your own setting comes back. `/kos status` shows the range you have.
+- A new enemy is picked up the moment their nameplate appears. If the game hasn't filled in their name yet, the addon looks again every frame instead of five times a second.
+
 ## 1.2.0
 
 ### New

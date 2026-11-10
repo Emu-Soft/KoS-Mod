@@ -49,10 +49,14 @@ end
 
 function ns.ReadUnit(unit)
 	if not Call(UnitExists, unit) then return nil end
-	if not Call(UnitIsPlayer, unit) then return nil end
+	local isPlayer = Call(UnitIsPlayer, unit)
+	if isPlayer == false then return nil end
 	if Call(UnitIsUnit, unit, "player") then return nil end
 	local name, realm = Call(UnitName, unit)
-	if type(name) ~= "string" or name == "" or name == UNKNOWNOBJECT or name == UNKNOWN then return nil end
+	-- Not readable yet (a plate that just appeared): the second result
+	-- asks the caller to look again.
+	if type(name) ~= "string" or name == "" or name == UNKNOWNOBJECT or name == UNKNOWN then return nil, true end
+	if not isPlayer then return nil, true end
 	if type(realm) ~= "string" or realm == "" then realm = nil end
 	local _, classFile = Call(UnitClass, unit)
 	local level = Call(UnitLevel, unit)
@@ -176,8 +180,9 @@ local function Seen(info, fromCombatLog)
 end
 
 function ns.CheckUnit(unit)
-	local info = ns.ReadUnit(unit)
+	local info, retry = ns.ReadUnit(unit)
 	if info then Seen(info) end
+	return info, retry
 end
 
 -- What a nearby row needs to show for key.
@@ -205,7 +210,32 @@ end
 -- Watching
 -----------------------------------------------------------------------
 
-ns.On("NAME_PLATE_UNIT_ADDED", function(unit) ns.CheckUnit(unit) end)
+-- A plate whose name can't be read the moment it appears is read again
+-- every frame (for up to 3 seconds) instead of waiting for the next scan.
+local pending = {} -- plate unit -> GetTime() it appeared
+local pendingFrame = CreateFrame("Frame")
+pendingFrame:Hide()
+pendingFrame:SetScript("OnUpdate", ns.Guarded("plates", function(self)
+	local now, any = GetTime(), false
+	for unit, t in pairs(pending) do
+		local info, retry = ns.CheckUnit(unit)
+		if info or not retry or now - t > 3 then
+			pending[unit] = nil
+		else
+			any = true
+		end
+	end
+	if not any then self:Hide() end
+end))
+
+ns.On("NAME_PLATE_UNIT_ADDED", function(unit)
+	local info, retry = ns.CheckUnit(unit)
+	if not info and retry and type(unit) == "string" then
+		pending[unit] = GetTime()
+		pendingFrame:Show()
+	end
+end)
+ns.On("NAME_PLATE_UNIT_REMOVED", function(unit) pending[unit] = nil end)
 ns.On("PLAYER_TARGET_CHANGED", function() ns.CheckUnit("target") end)
 ns.On("PLAYER_FOCUS_CHANGED", function() ns.CheckUnit("focus") end)
 ns.On("UPDATE_MOUSEOVER_UNIT", function() ns.CheckUnit("mouseover") end)
@@ -265,14 +295,64 @@ function ns.EnemyPlatesOn()
 	return v == "1"
 end
 
+local function GetCV(name)
+	local get = (C_CVar and C_CVar.GetCVar) or GetCVar
+	if not get then return nil end
+	local ok, v = pcall(get, name)
+	if ok then return Plain(v) end
+end
+
+local function SetCV(name, value)
+	local set = (C_CVar and C_CVar.SetCVar) or SetCVar
+	if set then pcall(set, name, value) end
+end
+
+-- How far away nameplates appear, in yards (nil if the client won't say).
+function ns.PlateRange()
+	return tonumber(GetCV("nameplateMaxDistance"))
+end
+
+-- Nameplates appear only within nameplateMaxDistance, and past that an
+-- addon can't see a player until you hover or target them. With "far
+-- plates" on, ask for 100 yards; the game lowers it to the most it allows.
+-- The player's own value is kept and put back when the option is turned off.
+local FAR = "100"
+function ns.ApplyPlateRange()
+	if not ns.db then return end
+	if InCombatLockdown() then
+		ns.plateRangePending = true
+		return
+	end
+	ns.plateRangePending = nil
+	local now = GetCV("nameplateMaxDistance")
+	if now == nil then return end
+	if ns.Setting("farPlates") then
+		if ns.db.plateRangeWas == nil then ns.db.plateRangeWas = now end
+		if now ~= FAR then SetCV("nameplateMaxDistance", FAR) end
+	elseif ns.db.plateRangeWas ~= nil then
+		SetCV("nameplateMaxDistance", ns.db.plateRangeWas)
+		ns.db.plateRangeWas = nil
+	end
+end
+
+ns.On("PLAYER_ENTERING_WORLD", function() ns.ApplyPlateRange() end)
+ns.On("PLAYER_REGEN_ENABLED", function()
+	if ns.plateRangePending then ns.ApplyPlateRange() end
+end)
+ns.Listen("SETTINGS_CHANGED", function(k)
+	if k == "farPlates" then ns.ApplyPlateRange() end
+end)
+
 function ns.TurnOnEnemyPlates()
 	if InCombatLockdown() then
 		ns.Print("can't change nameplates in combat; try again after.")
 		return
 	end
-	local set = (C_CVar and C_CVar.SetCVar) or SetCVar
-	if set then pcall(set, "nameplateShowEnemies", "1") end
-	ns.Print(ns.EnemyPlatesOn() and "enemy nameplates are on: enemies are spotted as soon as they're in range." or "couldn't turn enemy nameplates on.")
+	SetCV("nameplateShowEnemies", "1")
+	if ns.Setting("farPlates") then ns.ApplyPlateRange() end
+	local range = ns.PlateRange()
+	ns.Print(ns.EnemyPlatesOn() and ("enemy nameplates are on: enemies are spotted as soon as they're in range"
+		.. (range and (" (" .. range .. " yards)") or "") .. ".") or "couldn't turn enemy nameplates on.")
 end
 
 ns.On("PLAYER_ENTERING_WORLD", function()

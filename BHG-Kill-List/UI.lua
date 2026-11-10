@@ -712,6 +712,7 @@ local OPTIONS = {
 	{ "guildSightings", "Show the guild's sightings in my chat" },
 	{ "nearby", "Show the nearby enemies window" },
 	{ "nearbyAll", "List every enemy player nearby, not only listed ones" },
+	{ "farPlates", "Show nameplates as far away as the game allows (spots enemies sooner)" },
 }
 
 local checks = {}

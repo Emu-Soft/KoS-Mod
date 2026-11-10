@@ -57,9 +57,11 @@ local function Status()
 	local w, l, seenCount = ns.Totals()
 	say("seen " .. seenCount .. " enemy players, record " .. ns.Score({ w = w, l = l }) .. ".")
 	local plates = ns.EnemyPlatesOn()
-	say(string.format("detection: nameplates %s (enemy nameplates %s), tooltips %s, menus %s, combat log %s",
+	local range = ns.PlateRange()
+	say(string.format("detection: nameplates %s (enemy nameplates %s, range %s), tooltips %s, menus %s, combat log %s",
 		(C_NamePlate and C_NamePlate.GetNamePlates) and "yes" or "no",
 		plates == true and "on" or (plates == false and "OFF: /kos plates" or "?"),
+		range and (range .. " yards") or "?",
 		(TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall) and "yes" or "old style",
 		(Menu and Menu.ModifyMenu) and "yes" or "no",
 		CombatLogGetCurrentEventInfo and "yes" or "no (restricted on Forever)"))

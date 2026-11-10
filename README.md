@@ -84,6 +84,7 @@ Turn each part of the warning on or off (banner, sounds, chat), the sound for ev
 - **In combat** the nearby window can't take new rows (the game doesn't allow it), so newcomers are counted at the bottom and get their row when combat ends. The warning works in combat either way.
 - **In instances** the game hides player names from addons, so listed players aren't spotted there.
 - **Turn on enemy nameplates** (`/kos plates`). That's how enemies get spotted the moment they come into range; without them, only when you target or mouse over someone.
+- **How far away enemies are spotted** depends on the game's nameplate range. The addon raises it as far as the game allows (option "Show nameplates as far away as the game allows"). Beyond that range the game gives addons no way to see a player until you mouse over or target them, so those are still caught the moment you hover them.
 - **Wins and losses** are worked out from what the game lets addons see (Forever doesn't let addons read the combat log, which Spy uses). A win is an enemy you were fighting dying, or an honourable kill; a loss is dying while an enemy player was attacking you. Your record stays on your PC and isn't shared.
 - `/kos status` shows a *list fingerprint*. Once everyone is in sync, it's the same for every guild member.
 
