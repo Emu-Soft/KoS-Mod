@@ -5,11 +5,16 @@
 -- listed player warns you and tells the guild, and that the seen-enemies
 -- database counts wins and losses and survives a relog.
 --
---   lua5.1 tests/sync_sim.lua BHG-Kill-List [seed] [throttle chance]
+--   lua5.1 tests/sync_sim.lua BHG-Kill-List [seed] [throttle chance] [KoS.lua]
+--
+-- With a K-UI build (python3 tools/build_kui.py KoS.lua) as the last
+-- argument it also checks K-UI users and standalone users sharing one
+-- list, and a PC with both installed (K-UI in charge).
 --
 -- The throttle chance (0 to 1) makes that share of sends come back
 -- "throttled", like the real client does under load.
 local DIR = arg[1]
+KUI_FILE = arg[4]
 THROTTLE = tonumber(arg[3])
 local FILES = { "Core.lua", "Sync.lua", "Detect.lua", "Stats.lua", "UI.lua", "Commands.lua" }
 
@@ -110,30 +115,56 @@ local function Fire(c, event, ...)
   end
 end
 
-local function Login(name, db)
+-- addons: which copies this player runs: "standalone" (default), "kui"
+-- (K-UI's KoS.lua, built by tools/build_kui.py) or "both".
+local Logout
+local function Login(name, db, addons)
+  if online[name] then Logout(name) end -- a /reload
   local c = clients[name] or { name = name }
   clients[name] = c
   c.log = {}
   c.alive = {}
+  addons = addons or c.addons or "standalone"
+  c.addons = addons
   local env = MakeEnv(c)
-  env.BHGKillListDB = db or c.db
-  local ns = {}
-  for _, file in ipairs(FILES) do
-    local chunk = assert(loadfile(DIR .. "/" .. file))
-    setfenv(chunk, env)
-    chunk("BHG-Kill-List", ns)
+  c.saved = c.saved or {}
+  if db then c.saved.BHGKillListDB = db end
+  env.BHGKillListDB = c.saved.BHGKillListDB
+  env.KainUIForeverKoSDB = c.saved.KainUIForeverKoSDB
+  local standalone, kui
+  if addons == "standalone" or addons == "both" then
+    standalone = {}
+    for _, file in ipairs(FILES) do
+      local chunk = assert(loadfile(DIR .. "/" .. file))
+      setfenv(chunk, env)
+      chunk("BHG-Kill-List", standalone)
+    end
   end
-  c.env, c.ns = env, ns
+  if addons == "kui" or addons == "both" then
+    assert(KUI_FILE, "give the built KoS.lua as the 4th argument")
+    local chunk = assert(loadfile(KUI_FILE))
+    setfenv(chunk, env)
+    local KUI = {}
+    chunk("Kain-UI-Forever", KUI)
+    kui = KUI.KoS
+  end
+  c.env, c.standalone, c.kui = env, standalone, kui
   online[name] = c
-  Fire(c, "ADDON_LOADED", "BHG-Kill-List")
-  c.db = env.BHGKillListDB
+  -- The client loads addons in name order: BHG-Kill-List before Kain-UI-Forever.
+  if standalone then Fire(c, "ADDON_LOADED", "BHG-Kill-List") end
+  if kui then Fire(c, "ADDON_LOADED", "Kain-UI-Forever") end
+  Fire(c, "PLAYER_LOGIN")
+  c.ns = (kui and kui.active and kui) or standalone or kui
+  c.db = c.ns.db
   Fire(c, "PLAYER_ENTERING_WORLD")
   return c
 end
 
-local function Logout(name)
+Logout = function(name)
   local c = online[name]
   online[name] = nil
+  c.saved.BHGKillListDB = c.env.BHGKillListDB
+  c.saved.KainUIForeverKoSDB = c.env.KainUIForeverKoSDB
   c.session = (c.session or 0) + 1
   -- drop its timers
   for _, t in ipairs(timers) do if t.client == c then t.cancelled = true end end
@@ -184,8 +215,12 @@ end
 
 local function Errors(c)
   local n = 0
-  for label, k in pairs(c.ns.errorCounts) do n = n + k print("  ERROR in " .. c.name .. " " .. label .. ": " .. k) end
-  for _, l in ipairs(c.log) do if l:find("error") then print("  LOG " .. c.name .. ": " .. l) end end
+  for _, space in pairs({ c.standalone or false, c.kui or false }) do
+    if space then
+      for label, k in pairs(space.errorCounts) do n = n + k print("  ERROR in " .. c.name .. " " .. label .. ": " .. k) end
+    end
+  end
+  for _, l in ipairs(c.log) do if l:find("error") and not l:find("no errors") then print("  LOG " .. c.name .. ": " .. l) end end
   return n
 end
 
@@ -407,6 +442,69 @@ Fire(W, "CHAT_MSG_COMBAT_HONOR_GAIN", "Stabby dies, honorable kill Rank: Scout (
 Check(W.ns.Enemy(sk).w == 1, "an honourable kill counts as a win")
 Fire(W, "CHAT_MSG_COMBAT_HONOR_GAIN", "Stabby dies, honorable kill Rank: Scout (Estimated Honor Points: 12)")
 Check(W.ns.Enemy(sk).w == 1, "and isn't counted twice")
+
+---------------------------------------------------------------- scenario 9
+if KUI_FILE then
+print("== 9. K-UI's KoS module: mixed guild, and both installed on one PC")
+for n in pairs(online) do Logout(n) end
+-- Someone used the standalone addon for a while.
+local Old = Login("Oldtimer", nil, "standalone")
+Add(Old, "Ganker", "old grudge") Add(Old, "Camper", "camps the flight path")
+Old.ns.db.enemies[Old.ns.Key("Ganker", "Forever")] = { n = "Ganker", r = "Forever", w = 4, l = 2, times = 9, first = 1, last = 2 }
+Old.ns.SetSetting("nearbyAll", false)
+Run(10) Logout("Oldtimer")
+-- A K-UI user and a standalone user in the guild.
+local K = Login("Kuser", nil, "kui")
+local S = Login("Suser", nil, "standalone")
+Run(120)
+Check(K.ns.embedded and K.ns.active, "K-UI's module runs for a K-UI-only player")
+Add(K, "Fromkui", "added in K-UI") Run(5)
+Check(Has(S, "Fromkui"), "a K-UI add reaches a standalone user")
+Add(S, "Fromstandalone", "added standalone") Run(5)
+Check(Has(K, "Fromstandalone"), "a standalone add reaches a K-UI user")
+-- Oldtimer installs K-UI next to the standalone addon.
+local hellosBefore = 0
+local B = Login("Oldtimer", nil, "both")
+Check(B.kui.active and not B.standalone.active and B.standalone.slaved, "with both installed, K-UI runs and the standalone addon sleeps")
+Check(B.ns == B.kui and Has(B, "Ganker") and Has(B, "Camper"), "K-UI brought in the standalone addon's list")
+local rec = B.kui.Enemy(B.kui.Key("Ganker", "Forever"))
+Check(rec and rec.w == 4 and rec.l == 2 and rec.times == 9, "and its wins and losses")
+Check(B.kui.Setting("nearbyAll") == false, "and its settings")
+B.sentCount = 0
+Run(120)
+Check(AllSame(), "Oldtimer, Kuser and Suser all have the same list")
+Check(Has(B, "Fromkui") and Has(B, "Fromstandalone"), "Oldtimer caught up with both")
+Check(B.sentCount <= 3, "only one copy talks for Oldtimer (" .. B.sentCount .. " messages)")
+local slash = B.env.SlashCmdList.BHGKILLLIST
+B.log = {}
+slash("status")
+local fromKui = false
+for _, l in ipairs(B.log) do if l:find("K-UI's kill list") and l:find("asleep") then fromKui = true end end
+Check(fromKui, "/kos is answered by K-UI's module")
+slash("off") Run(1)
+Logout("Oldtimer")
+B = Login("Oldtimer", nil, "both")
+Check(B.standalone.active and not B.kui.active, "after /kos off, the standalone addon runs instead")
+Run(60)
+Check(AllSame(), "and stays in sync with the guild")
+B.log = {}
+B.env.SlashCmdList.BHGKILLLIST("on") Run(1)
+Logout("Oldtimer")
+B = Login("Oldtimer", nil, "both")
+Check(B.kui.active and not B.standalone.active, "/kos on hands it back to K-UI")
+Logout("Oldtimer")
+B = Login("Oldtimer", nil, "kui")
+B.env.SlashCmdList.BHGKILLLIST("off") Run(1) Logout("Oldtimer")
+B = Login("Oldtimer", nil, "kui") Run(1)
+B.log = {}
+B.env.SlashCmdList.BHGKILLLIST("") Run(1)
+local offNote = false
+for _, l in ipairs(B.log) do if l:find("/kos on") then offNote = true end end
+Check(not B.kui.active and offNote, "K-UI alone, turned off: /kos only offers /kos on")
+B.env.SlashCmdList.BHGKILLLIST("on") Run(1) Logout("Oldtimer")
+B = Login("Oldtimer", nil, "kui")
+Check(B.kui.active, "and /kos on brings it back")
+end
 
 local errs = 0
 for _, c in pairs(clients) do if c.ns then errs = errs + Errors(c) end end

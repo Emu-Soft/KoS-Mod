@@ -2,7 +2,7 @@
 ## Title: BH&G Kill List
 ## Notes: Better Homes & Gardens' kill-on-sight list, shared with every guild member who runs it.
 ## Author: [EmuSoft]
-## Version: 1.1.0
+## Version: 1.2.0
 ## Category: K-Mods
 ## IconTexture: Interface\Icons\Ability_Hunter_MarkedForDeath
 ## SavedVariables: BHGKillListDB

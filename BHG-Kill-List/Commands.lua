@@ -1,5 +1,9 @@
 --[[
 BH&G Kill List: Commands.lua  (/kos, /bhgkos)
+
+Only the copy that's running owns /kos: it registers the command once it
+starts. K-UI's copy, when turned off, keeps a small /kos that only knows
+"on" (unless the standalone addon has taken /kos over by then).
 --]]
 
 local _, ns = ...
@@ -19,11 +23,22 @@ local HELP = {
 	"/kos test - show a test warning",
 	"/kos move - move the warning",
 	"/kos status - what the addon can see (for bug reports)",
+	"/kos on | off - turn K-UI's kill list on or off (K-UI only)",
 }
+
+local function SwitchKUI(on)
+	local kui = _G.KainUIForeverKoS
+	if kui and kui.SetEnabled then
+		kui.SetEnabled(on)
+	else
+		ns.Print("/kos on and /kos off switch K-UI's kill list; K-UI isn't loaded.")
+	end
+end
 
 local function Status()
 	local say = ns.Print
-	say("version " .. ns.VERSION .. ", " .. ns.Count() .. " players on the list (" .. (function()
+	say((ns.embedded and "K-UI's kill list" or "standalone addon") .. (ns.embedded and "" or (" version " .. ns.VERSION))
+		.. (_G.BHGKillListStandalone and ns.embedded and " (the standalone addon is installed and asleep)" or "") .. ", " .. ns.Count() .. " players on the list (" .. (function()
 		local n = 0
 		for _, e in pairs(ns.db.entries) do if e.x then n = n + 1 end end
 		return n
@@ -72,15 +87,15 @@ local function Find(arg)
 	return found, name, realm
 end
 
-SLASH_BHGKILLLIST1 = "/kos"
-SLASH_BHGKILLLIST2 = "/bhgkos"
-SlashCmdList["BHGKILLLIST"] = function(msg)
+local function Handler(msg)
 	if not ns.db then return end
 	msg = (msg or ""):match("^%s*(.-)%s*$")
 	local cmd, rest = msg:match("^(%S+)%s*(.-)$")
 	cmd = cmd and cmd:lower() or ""
 
-	if cmd == "" then
+	if cmd == "on" or cmd == "off" then
+		SwitchKUI(cmd == "on")
+	elseif cmd == "" then
 		ns.ToggleWindow()
 	elseif cmd == "add" then
 		if rest == "" then
@@ -134,4 +149,38 @@ SlashCmdList["BHGKILLLIST"] = function(msg)
 	else
 		for _, line in ipairs(HELP) do print("  " .. line) end
 	end
+end
+
+local function Register(fn)
+	_G.SLASH_BHGKILLLIST1 = "/kos"
+	_G.SLASH_BHGKILLLIST2 = "/bhgkos"
+	SlashCmdList["BHGKILLLIST"] = fn
+	if _G.hash_SlashCmdList then -- drop the chat box's cached lookup
+		_G.hash_SlashCmdList["/KOS"] = nil
+		_G.hash_SlashCmdList["/BHGKOS"] = nil
+	end
+end
+
+ns.Listen("DB_READY", function() Register(Handler) end)
+
+-- K-UI's copy, turned off: answer /kos on, unless the standalone addon
+-- is running and owns /kos.
+if ns.embedded then
+	local probe = CreateFrame("Frame")
+	probe:RegisterEvent("PLAYER_LOGIN")
+	probe:SetScript("OnEvent", function()
+		C_Timer.After(0, function()
+			if not ns.disabled then return end
+			local standalone = _G.BHGKillListStandalone
+			if standalone and standalone.active then return end
+			Register(function(msg)
+				local cmd = (msg or ""):match("^%s*(%S*)"):lower()
+				if cmd == "on" then
+					ns.SetEnabled(true)
+				else
+					ns.Print("K-UI's kill list is off. Type /kos on and /reload to turn it on.")
+				end
+			end)
+		end)
+	end)
 end

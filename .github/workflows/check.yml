@@ -1,5 +1,6 @@
 # Runs on every push: a Lua lint pass and the offline sync test
-# (tests/sync_sim.lua) with a few random seeds, some with throttling.
+# (tests/sync_sim.lua) with a few random seeds, some with throttling,
+# including K-UI's built-in copy (built by tools/build_kui.py).
 name: Check
 
 on:
@@ -19,10 +20,13 @@ jobs:
       - name: Lint
         run: luacheck BHG-Kill-List
 
+      - name: Build K-UI's KoS.lua
+        run: python3 tools/build_kui.py /tmp/KoS.lua
+
       - name: Sync test
         run: |
-          for args in "1" "2" "3 0.2" "4 0.3" "5 0.2"; do
+          for args in "1 0" "2 0" "3 0.2" "4 0.3" "5 0.2"; do
             echo "::group::seed $args"
-            lua5.1 tests/sync_sim.lua BHG-Kill-List $args
+            lua5.1 tests/sync_sim.lua BHG-Kill-List $args /tmp/KoS.lua
             echo "::endgroup::"
           done

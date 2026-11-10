@@ -30,7 +30,7 @@ local SOUNDS = {
 function ns.PlaySound(which)
 	local file = SOUNDS[which]
 	if not file or not PlaySoundFile then return end
-	pcall(PlaySoundFile, "Interface\\AddOns\\" .. ns.ADDON_NAME .. "\\Sounds\\" .. file, "Master")
+	pcall(PlaySoundFile, ns.SOUND_DIR .. file, "Master")
 end
 
 local SHARE_COOLDOWN = 60
@@ -344,6 +344,7 @@ end)
 -----------------------------------------------------------------------
 
 local function OnUnitTooltip(tooltip)
+	if not ns.active then return end
 	if tooltip ~= GameTooltip or not tooltip.GetUnit then return end
 	local ok, _, unit = pcall(tooltip.GetUnit, tooltip)
 	unit = ok and Plain(unit) or nil
@@ -395,7 +396,7 @@ local function MenuTarget(contextData)
 end
 
 local function AddMenuButton(_, rootDescription, contextData)
-	if not rootDescription then return end
+	if not rootDescription or not ns.active then return end
 	local info = MenuTarget(contextData)
 	if not info then return end
 	local key = ns.Key(info.name, info.realm)

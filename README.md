@@ -71,6 +71,7 @@ You'll be asked for a reason. It's optional, but it's what the whole guild sees 
 | `/kos test` | Show a test warning. |
 | `/kos move` | Move the warning banner. |
 | `/kos status` | What the addon can see. Handy for bug reports. |
+| `/kos off` / `on` | Turn Kain-UI Forever's kill list off or on (see below). |
 
 ## Options (`/kos options`)
 
@@ -85,6 +86,15 @@ Turn each part of the warning on or off (banner, sounds, chat), the sound for ev
 - **Turn on enemy nameplates** (`/kos plates`). That's how enemies get spotted the moment they come into range; without them, only when you target or mouse over someone.
 - **Wins and losses** are worked out from what the game lets addons see (Forever doesn't let addons read the combat log, which Spy uses). A win is an enemy you were fighting dying, or an honourable kill; a loss is dying while an enemy player was attacking you. Your record stays on your PC and isn't shared.
 - `/kos status` shows a *list fingerprint*. Once everyone is in sync, it's the same for every guild member.
+
+## With Kain-UI Forever
+
+Kain-UI Forever (1.0.347 and later) has this kill list built in. You don't need both, but having both is fine:
+
+- K-UI's copy runs and this addon stays asleep, so nothing shows twice.
+- On its first login K-UI brings over this addon's list, your wins and losses, your settings and window positions.
+- To use this addon instead, type `/kos off` and `/reload`. `/kos on` and `/reload` switches back.
+- Both copies sync with the same guildmates, so it doesn't matter which one each person runs.
 
 ## Credits
 

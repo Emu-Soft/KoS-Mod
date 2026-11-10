@@ -2,6 +2,15 @@
 
 Newest first. Each version has up to three sections: New, Changed, Fixed. The release button builds each GitHub release's description from this file.
 
+## 1.2.0
+
+### New
+- Kain-UI Forever now has the kill list built in (K-UI 1.0.347 and later). If you have both, K-UI's copy runs and this addon stays asleep, so you never get two warnings or two nearby windows. On its first login K-UI brings over your list, your wins and losses, your settings and where you put the windows.
+- `/kos off` turns K-UI's kill list off and hands the job back to this addon after a reload; `/kos on` turns it back on.
+
+### Fixed
+- Logging in during combat no longer blocks the nearby window: its rows are made once combat ends.
+
 ## 1.1.0
 
 ### New

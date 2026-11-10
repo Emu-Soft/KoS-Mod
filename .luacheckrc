@@ -3,6 +3,7 @@ std = "lua51"
 max_line_length = false
 unused_args = false
 globals = {
+	"KainUIForeverKoS", "BHGKillListStandalone", "hash_SlashCmdList",
 	"BHGKillListDB", "SlashCmdList", "StaticPopupDialogs",
 	"SLASH_BHGKILLLIST1", "SLASH_BHGKILLLIST2",
 }

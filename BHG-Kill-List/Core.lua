@@ -10,6 +10,17 @@ a small "removed" marker instead of deleting the entry, so the removal
 spreads to guildmates who were offline at the time instead of the player
 coming back from their copy.
 
+Two homes. The same code runs as the standalone BH&G Kill List addon and
+as the KoS module inside K-UI: Forever (built from these files into
+KoS.lua). Whoever builds it can set ns.embedded, ns.DB_NAME,
+ns.SOUND_DIR, ns.FRAME_PREFIX and ns.POPUP_PREFIX before this file runs.
+When both are installed, K-UI is in charge: the standalone addon sees
+K-UI's KoS module running at login and stays asleep (no events, no
+windows, no messages), and K-UI takes over its list and records. If
+K-UI's module is turned off (/kos off), the standalone addon runs as
+usual. Both speak the same guild protocol, so guild members on either
+one share one list.
+
 Forever notes (same as K-Targeter in Kain-UI Forever):
   * Names, flags and GUIDs read from units can be SECRET values in
     restricted situations (mostly instances and some combat). A secret
@@ -22,6 +33,11 @@ Forever notes (same as K-Targeter in Kain-UI Forever):
 local ADDON_NAME, ns = ...
 
 ns.ADDON_NAME = ADDON_NAME
+ns.DB_NAME = ns.DB_NAME or "BHGKillListDB"
+ns.SOUND_DIR = ns.SOUND_DIR or ("Interface\\AddOns\\" .. ADDON_NAME .. "\\Sounds\\")
+ns.FRAME_PREFIX = ns.FRAME_PREFIX or "BHGKillList"
+ns.POPUP_PREFIX = ns.POPUP_PREFIX or "BHGKOS_"
+ns.active = false -- true once this copy is the one running
 ns.TITLE = "BH&G Kill List"
 ns.PREFIX = "|cffe03c3cBH&G Kill List:|r "
 ns.VERSION = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version"))
@@ -214,8 +230,8 @@ ns.DEFAULTS = {
 }
 
 function ns.InitDB()
-	if type(BHGKillListDB) ~= "table" then BHGKillListDB = {} end
-	local db = BHGKillListDB
+	if type(_G[ns.DB_NAME]) ~= "table" then _G[ns.DB_NAME] = {} end
+	local db = _G[ns.DB_NAME]
 	ns.loadedWithData = type(db.entries) == "table" and next(db.entries) ~= nil
 	if type(db.entries) ~= "table" then db.entries = {} end
 	if type(db.settings) ~= "table" then db.settings = {} end
@@ -562,12 +578,114 @@ function ns.On(event, fn)
 	table.insert(handlers[event], ns.Guarded(event, fn))
 end
 
+-- Only ADDON_LOADED and PLAYER_LOGIN reach a copy that isn't running
+-- (asleep under K-UI, or K-UI's module turned off).
+local STARTUP_EVENTS = { ADDON_LOADED = true, PLAYER_LOGIN = true }
 frame:SetScript("OnEvent", function(_, event, ...)
+	if not ns.active and not STARTUP_EVENTS[event] then return end
 	for _, fn in ipairs(handlers[event] or {}) do fn(...) end
 end)
 
+local function Start()
+	if ns.active then return end
+	ns.InitDB()
+	ns.active = true
+	ns.Fire("DB_READY")
+end
+
+-- K-UI's copy reads its on/off switch from its own saved table.
+local function EmbeddedEnabled()
+	local saved = _G[ns.DB_NAME]
+	return not (type(saved) == "table" and saved.enabled == false)
+end
+
 ns.On("ADDON_LOADED", function(name)
 	if name ~= ADDON_NAME then return end
-	ns.InitDB()
-	ns.Fire("DB_READY")
+	if ns.embedded then
+		_G.KainUIForeverKoS = ns
+		if EmbeddedEnabled() then Start() else ns.disabled = true end
+	end
 end)
+
+-- Every addon and its saved data is loaded by PLAYER_LOGIN, so this is
+-- where the standalone copy decides whether K-UI is in charge.
+ns.On("PLAYER_LOGIN", function()
+	if ns.embedded then
+		if ns.active then ns.ImportStandalone() end
+		ns.Fire("LOGIN")
+		return
+	end
+	_G.BHGKillListStandalone = ns
+	local master = _G.KainUIForeverKoS
+	if master and master.active then
+		ns.slaved = true -- K-UI's KoS module runs the show
+		return
+	end
+	Start()
+	ns.Fire("LOGIN")
+end)
+
+-- K-UI turns its module on or off for the next session.
+function ns.SetEnabled(on)
+	if not ns.embedded then return end
+	if type(_G[ns.DB_NAME]) ~= "table" then _G[ns.DB_NAME] = {} end
+	_G[ns.DB_NAME].enabled = on and true or false
+	ns.Print("K-UI's kill list is " .. (on and "on" or "off") .. " from your next /reload or login."
+		.. (on and "" or " If the standalone BH&G Kill List addon is installed, it takes over then."))
+end
+
+-- K-UI's copy: bring in the standalone addon's list, records and settings
+-- (when that addon is installed, its saved data is loaded too). Safe to
+-- repeat: the list merges by the usual newest-change rule, records keep
+-- the higher counts.
+function ns.ImportStandalone()
+	local old = _G.BHGKillListDB
+	if type(old) ~= "table" or old == ns.db then return end
+	local db = ns.db
+	if type(old.entries) == "table" then
+		ns.syncQuiet = true
+		for _, e in pairs(old.entries) do
+			local copy = type(e) == "table" and type(e.n) == "string" and type(e.t) == "number"
+				and ns.Deserialize(ns.Serialize(e))
+			if copy then
+				for k, v in pairs(e) do
+					if copy[k] == nil and not ns.IsSharedField(k) then copy[k] = v end
+				end
+				ns.MergeIncoming(copy)
+			end
+		end
+		ns.syncQuiet = false
+	end
+	if type(old.enemies) == "table" then
+		db.enemies = db.enemies or {}
+		for key, rec in pairs(old.enemies) do
+			if type(rec) == "table" and type(rec.n) == "string" then
+				local mine = db.enemies[key]
+				if not mine then
+					mine = {}
+					for k, v in pairs(rec) do mine[k] = v end
+					db.enemies[key] = mine
+				else
+					for _, f in ipairs({ "w", "l", "times", "last", "lastWin", "lastLoss" }) do
+						if type(rec[f]) == "number" and (mine[f] or 0) < rec[f] then mine[f] = rec[f] end
+					end
+					if type(rec.first) == "number" and (not mine.first or rec.first < mine.first) then mine.first = rec.first end
+					for _, f in ipairs({ "c", "lv", "race", "g", "zone" }) do
+						if mine[f] == nil then mine[f] = rec[f] end
+					end
+				end
+			end
+		end
+	end
+	-- Settings and window spots only the first time.
+	if not db.imported then
+		db.imported = true
+		if type(old.settings) == "table" then
+			for k, v in pairs(old.settings) do db.settings[k] = v end
+		end
+		if type(old.pos) == "table" then
+			for k, v in pairs(old.pos) do db.pos[k] = v end
+		end
+	end
+	ns.Fire("LIST_CHANGED")
+end

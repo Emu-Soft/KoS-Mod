@@ -63,7 +63,7 @@ local function EditBoxOf(dialog)
 	return dialog and ((dialog.GetEditBox and dialog:GetEditBox()) or dialog.editBox)
 end
 
-StaticPopupDialogs["BHGKOS_ADD_NAME"] = {
+StaticPopupDialogs[ns.POPUP_PREFIX .. "ADD_NAME"] = {
 	text = "Add a player to the BH&G Kill List.\nName (or Name-Realm):",
 	button1 = ACCEPT or "Accept",
 	button2 = CANCEL or "Cancel",
@@ -79,13 +79,13 @@ StaticPopupDialogs["BHGKOS_ADD_NAME"] = {
 	end,
 	EditBoxOnEnterPressed = function(eb)
 		local dialog = eb:GetParent()
-		StaticPopupDialogs["BHGKOS_ADD_NAME"].OnAccept(dialog)
+		StaticPopupDialogs[ns.POPUP_PREFIX .. "ADD_NAME"].OnAccept(dialog)
 		dialog:Hide()
 	end,
 	EditBoxOnEscapePressed = function(eb) eb:GetParent():Hide() end,
 }
 
-StaticPopupDialogs["BHGKOS_REASON"] = {
+StaticPopupDialogs[ns.POPUP_PREFIX .. "REASON"] = {
 	text = "Why is %s kill on sight? (optional)",
 	button1 = ACCEPT or "Accept",
 	button2 = CANCEL or "Cancel",
@@ -115,13 +115,13 @@ StaticPopupDialogs["BHGKOS_REASON"] = {
 	end,
 	EditBoxOnEnterPressed = function(eb)
 		local dialog = eb:GetParent()
-		StaticPopupDialogs["BHGKOS_REASON"].OnAccept(dialog, dialog.data)
+		StaticPopupDialogs[ns.POPUP_PREFIX .. "REASON"].OnAccept(dialog, dialog.data)
 		dialog:Hide()
 	end,
 	EditBoxOnEscapePressed = function(eb) eb:GetParent():Hide() end,
 }
 
-StaticPopupDialogs["BHGKOS_REMOVE"] = {
+StaticPopupDialogs[ns.POPUP_PREFIX .. "REMOVE"] = {
 	text = "Remove %s from the BH&G Kill List?\nThis takes them off everyone's list.",
 	button1 = YES or "Yes",
 	button2 = NO or "No",
@@ -134,30 +134,30 @@ StaticPopupDialogs["BHGKOS_REMOVE"] = {
 
 function ns.AskReason(info)
 	local shown = NameColor(info.class, info.name)
-	StaticPopup_Show("BHGKOS_REASON", shown, nil, { info = info })
+	StaticPopup_Show(ns.POPUP_PREFIX .. "REASON", shown, nil, { info = info })
 end
 
 function ns.AskEditReason(key)
 	local e = ns.Get(key)
 	if not e then return end
-	StaticPopup_Show("BHGKOS_REASON", ns.ColorName(e), nil, { key = key, edit = true })
+	StaticPopup_Show(ns.POPUP_PREFIX .. "REASON", ns.ColorName(e), nil, { key = key, edit = true })
 end
 
 function ns.AskRemove(key)
 	local e = ns.Get(key)
 	if not e then return end
-	StaticPopup_Show("BHGKOS_REMOVE", ns.ColorName(e), nil, { key = key })
+	StaticPopup_Show(ns.POPUP_PREFIX .. "REMOVE", ns.ColorName(e), nil, { key = key })
 end
 
 function ns.AskAddName()
-	StaticPopup_Show("BHGKOS_ADD_NAME")
+	StaticPopup_Show(ns.POPUP_PREFIX .. "ADD_NAME")
 end
 
 -----------------------------------------------------------------------
 -- Warning banner
 -----------------------------------------------------------------------
 
-local banner = CreateFrame("Frame", "BHGKillListBanner", UIParent, BACKDROP_TEMPLATE)
+local banner = CreateFrame("Frame", ns.FRAME_PREFIX .. "Banner", UIParent, BACKDROP_TEMPLATE)
 banner:SetSize(420, 74)
 banner:SetFrameStrata("HIGH")
 banner:Hide()
@@ -218,7 +218,7 @@ local NEARBY_ROWS = 10
 local ROW_H = 16
 local NEARBY_W = 210
 
-local nearby = CreateFrame("Frame", "BHGKillListNearby", UIParent, BACKDROP_TEMPLATE)
+local nearby = CreateFrame("Frame", ns.FRAME_PREFIX .. "Nearby", UIParent, BACKDROP_TEMPLATE)
 nearby:SetSize(NEARBY_W, 22)
 nearby:SetFrameStrata("MEDIUM")
 nearby:SetClampedToScreen(true)
@@ -270,8 +270,11 @@ local function RowMenu(row)
 	end
 end
 
-for i = 1, NEARBY_ROWS do
-	local row = CreateFrame("Button", "BHGKillListNearbyRow" .. i, nearby, "SecureActionButtonTemplate")
+-- The rows are made the first time they're needed out of combat: a
+-- secure button can't be set up in combat (a /reload mid-fight would
+-- otherwise leave them broken).
+local function MakeRow(i)
+	local row = CreateFrame("Button", ns.FRAME_PREFIX .. "NearbyRow" .. i, nearby, "SecureActionButtonTemplate")
 	row:SetSize(NEARBY_W - 8, ROW_H)
 	row:SetPoint("TOPLEFT", nearby, "TOPLEFT", 4, -20 - (i - 1) * ROW_H)
 	row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -317,6 +320,13 @@ for i = 1, NEARBY_ROWS do
 	rows[i] = row
 end
 
+local function EnsureRows()
+	if #rows == NEARBY_ROWS then return true end
+	if InCombatLockdown() then return false end
+	for i = #rows + 1, NEARBY_ROWS do MakeRow(i) end
+	return true
+end
+
 local function FillRowText(row, item)
 	local n, e = item.n, item.e
 	local level = (n.level and n.level > 0) and (" |cffaaaaaa" .. n.level .. "|r") or ""
@@ -332,7 +342,7 @@ local layoutPending = false
 
 local function LayoutNearby()
 	local list = ns.NearbyList()
-	if InCombatLockdown() then
+	if InCombatLockdown() or not EnsureRows() then
 		-- Rows keep their players; just refresh their text.
 		layoutPending = true
 		local byKey, extra = {}, 0
@@ -397,7 +407,7 @@ local LIST_ROWS = 10
 local LROW_H = 36
 local WIN_W, WIN_H = 520, 20 + 34 + LIST_ROWS * LROW_H + 40
 
-local win = CreateFrame("Frame", "BHGKillListWindow", UIParent, BACKDROP_TEMPLATE)
+local win = CreateFrame("Frame", ns.FRAME_PREFIX .. "Window", UIParent, BACKDROP_TEMPLATE)
 win:SetSize(WIN_W, WIN_H)
 win:SetFrameStrata("DIALOG")
 win:SetClampedToScreen(true)
@@ -408,7 +418,7 @@ win:SetScript("OnDragStart", win.StartMoving)
 win:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() SavePos(self, "window") end)
 Backdrop(win, 0.94)
 win:Hide()
-tinsert(UISpecialFrames, "BHGKillListWindow")
+tinsert(UISpecialFrames, ns.FRAME_PREFIX .. "Window")
 
 win.title = Text(win, "GameFontNormal")
 win.title:SetPoint("TOPLEFT", 10, -8)
@@ -420,7 +430,7 @@ local mode = "kos"
 local close = CreateFrame("Button", nil, win, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
 
-local search = CreateFrame("EditBox", "BHGKillListSearch", win, "InputBoxTemplate")
+local search = CreateFrame("EditBox", ns.FRAME_PREFIX .. "Search", win, "InputBoxTemplate")
 search:SetSize(160, 20)
 search:SetPoint("TOPLEFT", 16, -30)
 search:SetAutoFocus(false)
