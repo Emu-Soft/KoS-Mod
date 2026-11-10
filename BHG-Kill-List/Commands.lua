@@ -11,7 +11,9 @@ local HELP = {
 	"/kos remove <name> - take someone off the list (for everyone)",
 	"/kos reason <name> <reason> - change someone's reason",
 	"/kos check <name> - is this player on the list?",
+	"/kos seen - everyone you've come across, with your wins and losses",
 	"/kos nearby - show or hide the nearby enemies window",
+	"/kos plates - turn on enemy nameplates (spots enemies as soon as they're in range)",
 	"/kos options - open the options",
 	"/kos sync - compare lists with the guild now",
 	"/kos test - show a test warning",
@@ -37,8 +39,12 @@ local function Status()
 	local digests = {}
 	for i, h in ipairs(ns.BucketHashes()) do digests[i] = ns.ToB36(h) end
 	say("list fingerprint: " .. ns.ToB36(ns.Hash(table.concat(digests, ","))) .. " (the same on every guild member's PC once they're in sync)")
-	say(string.format("detection: nameplates %s, tooltips %s, menus %s, combat log %s",
+	local w, l, seenCount = ns.Totals()
+	say("seen " .. seenCount .. " enemy players, record " .. ns.Score({ w = w, l = l }) .. ".")
+	local plates = ns.EnemyPlatesOn()
+	say(string.format("detection: nameplates %s (enemy nameplates %s), tooltips %s, menus %s, combat log %s",
 		(C_NamePlate and C_NamePlate.GetNamePlates) and "yes" or "no",
+		plates == true and "on" or (plates == false and "OFF: /kos plates" or "?"),
 		(TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall) and "yes" or "old style",
 		(Menu and Menu.ModifyMenu) and "yes" or "no",
 		CombatLogGetCurrentEventInfo and "yes" or "no (restricted on Forever)"))
@@ -105,6 +111,10 @@ SlashCmdList["BHGKILLLIST"] = function(msg)
 		else
 			ns.Print((name or rest) .. " isn't on the list.")
 		end
+	elseif cmd == "seen" or cmd == "stats" then
+		ns.ShowPage("seen")
+	elseif cmd == "plates" then
+		ns.TurnOnEnemyPlates()
 	elseif cmd == "nearby" then
 		ns.ToggleNearby()
 	elseif cmd == "options" or cmd == "config" then

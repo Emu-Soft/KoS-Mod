@@ -19,6 +19,20 @@ local lastAlert = {}  -- key -> GetTime()
 local lastShared = {} -- key -> GetTime()
 local lastGuildNote = {} -- key -> GetTime()
 
+-- The Star Trek alerts from Spy.
+local SOUNDS = {
+	kos = "detected-kos.mp3",         -- someone on the list, near you
+	kosaway = "detected-kosaway.mp3", -- someone on the list, spotted by a guildmate
+	nearby = "detected-nearby.mp3",   -- any new enemy player nearby
+	add = "list-add.mp3",
+	remove = "list-remove.mp3",
+}
+function ns.PlaySound(which)
+	local file = SOUNDS[which]
+	if not file or not PlaySoundFile then return end
+	pcall(PlaySoundFile, "Interface\\AddOns\\" .. ns.ADDON_NAME .. "\\Sounds\\" .. file, "Master")
+end
+
 local SHARE_COOLDOWN = 60
 local GUILD_NOTE_COOLDOWN = 30
 
@@ -44,6 +58,7 @@ function ns.ReadUnit(unit)
 	local level = Call(UnitLevel, unit)
 	local race = Call(UnitRace, unit)
 	local guild = Call(GetGuildInfo, unit)
+	local dead = Call(UnitIsDeadOrGhost, unit)
 	local hostile = Call(UnitIsEnemy, "player", unit)
 	if hostile == nil then hostile = Call(UnitCanAttack, "player", unit) end
 	local theirFaction = Call(UnitFactionGroup, unit)
@@ -57,6 +72,7 @@ function ns.ReadUnit(unit)
 		race = type(race) == "string" and race or nil,
 		guild = type(guild) == "string" and guild ~= "" and guild or nil,
 		hostile = hostile and true or false,
+		dead = dead and true or false,
 		unit = unit,
 	}
 end
@@ -102,13 +118,13 @@ function ns.Alert(e, info, test)
 		local why = e.w and (" - " .. e.w) or ""
 		ns.Print("|cffff2020KILL ON SIGHT:|r " .. ns.ColorName(e) .. levelText .. why .. " |cff999999(added by " .. ns.ShortSender(e.b) .. ")|r")
 	end
-	if ns.Setting("sound") then
-		local kit = (SOUNDKIT and SOUNDKIT.RAID_WARNING) or 8959
-		pcall(PlaySound, kit, "Master")
-	end
+	if ns.Setting("sound") then ns.PlaySound("kos") end
 	if FlashClientIcon then pcall(FlashClientIcon) end
 	if ns.Setting("banner") and ns.ShowBanner then ns.ShowBanner(e, level) end
 end
+
+local lastNearbySound = 0
+local WHERE_EVERY = 5 -- seconds between "last seen at" updates for a player in view
 
 local function Seen(info, fromCombatLog)
 	local key = ns.Key(info.name, info.realm)
@@ -116,11 +132,18 @@ local function Seen(info, fromCombatLog)
 	if not e and not info.hostile then return end
 
 	local n = ns.nearby[key]
+	local isNewcomer = not n
 	if not n then
 		n = {}
 		ns.nearby[key] = n
 		n.first = GetTime()
 		ns.nearbyDirty = true
+	end
+	if ns.RecordEnemy then ns.RecordEnemy(info, isNewcomer) end
+	if isNewcomer and not e and info.hostile and not info.dead and ns.Setting("nearbySound")
+		and GetTime() - lastNearbySound > 2 then
+		lastNearbySound = GetTime()
+		ns.PlaySound("nearby")
 	end
 	n.name, n.realm = ns.ProperName(info.name), info.realm
 	n.class = info.class or n.class
@@ -134,17 +157,22 @@ local function Seen(info, fromCombatLog)
 	-- Things only this PC keeps.
 	e.lv = info.level or e.lv
 	e.race = info.race or e.race
-	local where = ns.WhereAmI()
-	e.seen, e.sz, e.sb = ns.Now(), where, ns.MyName()
+	local fresh = not n.whereAt or GetTime() - n.whereAt > WHERE_EVERY
+	if fresh then
+		n.whereAt = GetTime()
+		n.where = ns.WhereAmI()
+		e.seen, e.sz, e.sb = ns.Now(), n.where, ns.MyName()
+	end
 	if not fromCombatLog then ns.LearnDetails(key, info.class, info.guild) end
 	e = ns.Get(key) or e
 
+	if info.dead then return end
 	ns.Alert(e, info)
 	if ns.Setting("shareSightings") and (not lastShared[key] or GetTime() - lastShared[key] > SHARE_COOLDOWN) then
 		lastShared[key] = GetTime()
-		if ns.SendSighting then ns.SendSighting(e, where) end
+		if ns.SendSighting then ns.SendSighting(e, n.where or ns.WhereAmI()) end
 	end
-	ns.Fire("SEEN", key)
+	if fresh then ns.Fire("SEEN", key) end
 end
 
 function ns.CheckUnit(unit)
@@ -182,9 +210,13 @@ ns.On("PLAYER_TARGET_CHANGED", function() ns.CheckUnit("target") end)
 ns.On("PLAYER_FOCUS_CHANGED", function() ns.CheckUnit("focus") end)
 ns.On("UPDATE_MOUSEOVER_UNIT", function() ns.CheckUnit("mouseover") end)
 
--- Names can be secret when a plate first appears; checking the plates
--- again every second also keeps players who are still around in the
--- nearby list.
+-- Names can be secret when a plate first appears, and nameplates only
+-- send one "added" event, so the plates and the player's own units are
+-- read again five times a second; group members' targets once a second.
+-- Re-reading also keeps players who are still around in the nearby list.
+local QUICK_UNITS = { "target", "mouseover", "focus", "softenemy", "targettarget" }
+local SCAN_EVERY = 0.2
+
 local function ScanPlates()
 	if not (C_NamePlate and C_NamePlate.GetNamePlates) then return end
 	local ok, plates = pcall(C_NamePlate.GetNamePlates)
@@ -196,15 +228,61 @@ local function ScanPlates()
 	end
 end
 
+local function ScanGroupTargets()
+	local raid = Plain(IsInRaid and IsInRaid())
+	local count = Plain(GetNumGroupMembers and GetNumGroupMembers()) or 0
+	if raid then
+		for i = 1, math.min(count, 40) do ns.CheckUnit("raid" .. i .. "target") end
+	else
+		for i = 1, math.min(count, 4) do ns.CheckUnit("party" .. i .. "target") end
+	end
+	ns.CheckUnit("pettarget")
+end
+
 local scanTicker
 ns.Listen("DB_READY", function()
 	if scanTicker or not C_Timer then return end
-	scanTicker = C_Timer.NewTicker(1, ns.Guarded("scan", function()
+	local slow = 0
+	scanTicker = C_Timer.NewTicker(SCAN_EVERY, ns.Guarded("scan", function()
 		ScanPlates()
-		ns.CheckUnit("target")
-		ns.CheckUnit("mouseover")
-		ns.Fire("TICK")
+		for _, unit in ipairs(QUICK_UNITS) do ns.CheckUnit(unit) end
+		slow = slow + SCAN_EVERY
+		if slow >= 1 then
+			slow = 0
+			ScanGroupTargets()
+			ns.Fire("TICK")
+		end
 	end))
+end)
+
+-- Nameplates are the quickest way to spot someone (as soon as they're in
+-- range, no hovering needed), but only when enemy nameplates are on.
+function ns.EnemyPlatesOn()
+	local get = (C_CVar and C_CVar.GetCVar) or GetCVar
+	if not get then return nil end
+	local ok, v = pcall(get, "nameplateShowEnemies")
+	if not ok then return nil end
+	return v == "1"
+end
+
+function ns.TurnOnEnemyPlates()
+	if InCombatLockdown() then
+		ns.Print("can't change nameplates in combat; try again after.")
+		return
+	end
+	local set = (C_CVar and C_CVar.SetCVar) or SetCVar
+	if set then pcall(set, "nameplateShowEnemies", "1") end
+	ns.Print(ns.EnemyPlatesOn() and "enemy nameplates are on: enemies are spotted as soon as they're in range." or "couldn't turn enemy nameplates on.")
+end
+
+ns.On("PLAYER_ENTERING_WORLD", function()
+	if ns.platesTipShown or not C_Timer then return end
+	ns.platesTipShown = true
+	C_Timer.After(12, function()
+		if ns.EnemyPlatesOn() == false then
+			ns.Print("enemy nameplates are off, so enemies are only spotted when you target or mouse over them. Type |cffffd200/kos plates|r to turn them on and spot them as soon as they're in range.")
+		end
+	end)
 end)
 
 -- The combat log, where the client allows reading it.
@@ -240,6 +318,7 @@ ns.Listen("GUILD_SIGHTING", function(key, zone, sender)
 	lastGuildNote[key] = GetTime()
 	local where = (zone and zone ~= "") and (" in " .. zone) or ""
 	ns.Print(ns.ColorName(e) .. " spotted by " .. ns.ShortSender(sender) .. where .. ".")
+	if ns.Setting("sound") then ns.PlaySound("kosaway") end
 	ns.Fire("SEEN", key)
 end)
 
@@ -271,10 +350,16 @@ local function OnUnitTooltip(tooltip)
 	if type(unit) ~= "string" then return end
 	local info = ns.ReadUnit(unit)
 	if not info then return end
-	local e = ns.GetByName(info.name, info.realm)
-	if not e then return end
-	tooltip:AddLine("Kill on sight" .. (e.w and (": " .. e.w) or ""), 1, 0.15, 0.15, true)
-	tooltip:AddLine("BH&G Kill List, added by " .. ns.ShortSender(e.b), 0.6, 0.6, 0.6)
+	local key = ns.Key(info.name, info.realm)
+	local e = ns.Get(key)
+	if e then
+		tooltip:AddLine("Kill on sight" .. (e.w and (": " .. e.w) or ""), 1, 0.15, 0.15, true)
+		tooltip:AddLine("BH&G Kill List, added by " .. ns.ShortSender(e.b), 0.6, 0.6, 0.6)
+	end
+	local rec = ns.Enemy and ns.Enemy(key)
+	if rec and (e or info.hostile) and ((rec.w or 0) + (rec.l or 0)) > 0 then
+		tooltip:AddLine("Your record: " .. ns.Score(rec), 1, 1, 1)
+	end
 end
 
 if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Unit then
@@ -343,6 +428,7 @@ function ns.AddWithMessage(info, reason)
 		return
 	end
 	if isNew then
+		if ns.Setting("sound") then ns.PlaySound("add") end
 		ns.Print("added " .. ns.ColorName(e) .. (e.w and (": " .. e.w) or "") .. ". Guild members with the addon get it too.")
 	else
 		ns.Print(ns.ColorName(e) .. " is on the list" .. (e.w and (": " .. e.w) or "") .. ".")
@@ -353,6 +439,7 @@ end
 function ns.RemoveWithMessage(key)
 	local e = ns.Remove(key)
 	if e then
+		if ns.Setting("sound") then ns.PlaySound("remove") end
 		ns.Print("removed " .. ns.ColorName(e) .. " from the list.")
 	else
 		ns.Print("that player isn't on the list.")

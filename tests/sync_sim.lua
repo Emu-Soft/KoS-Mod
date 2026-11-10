@@ -1,8 +1,9 @@
 -- Offline test of BH&G Kill List: many players running the addon at
 -- once on one simulated clock, talking over a simulated guild channel.
 -- Checks that everyone's list ends up the same however they log in and
--- out, that a big guild doesn't flood the channel, and that spotting a
--- listed player warns you and tells the guild.
+-- out, that a big guild doesn't flood the channel, that spotting a
+-- listed player warns you and tells the guild, and that the seen-enemies
+-- database counts wins and losses and survives a relog.
 --
 --   lua5.1 tests/sync_sim.lua BHG-Kill-List [seed] [throttle chance]
 --
@@ -10,7 +11,7 @@
 -- "throttled", like the real client does under load.
 local DIR = arg[1]
 THROTTLE = tonumber(arg[3])
-local FILES = { "Core.lua", "Sync.lua", "Detect.lua", "UI.lua", "Commands.lua" }
+local FILES = { "Core.lua", "Sync.lua", "Detect.lua", "Stats.lua", "UI.lua", "Commands.lua" }
 
 local clock = 0
 local timers = {}         -- { at, fn, client, cancelled }
@@ -66,6 +67,8 @@ local function MakeEnv(c)
     IsInGuild = function() return true end,
     InCombatLockdown = function() return false end,
     PlaySound = function() end,
+    COMBATLOG_HONORGAIN = "%s dies, honorable kill Rank: %s (Estimated Honor Points: %d)",
+    PlaySoundFile = function(path) c.sounds = c.sounds or {} c.sounds[#c.sounds+1] = path:match("([%w%-]+)%.mp3$") end,
     C_AddOns = { GetAddOnMetadata = function() return "test" end },
     C_Timer = {
       After = function(s, fn) timers[#timers+1] = { at = clock + s, fn = fn, client = c } end,
@@ -337,6 +340,73 @@ local SlashCmd = S1.env.SlashCmdList.BHGKILLLIST
 SlashCmd("status") SlashCmd("check Gankboy") SlashCmd("add Someone being rude") SlashCmd("remove Someone") SlashCmd("help")
 Run(10)
 Check(not Has(S2, "Someone") and S2.db.entries[S2.ns.Key("Someone", "Forever")] ~= nil, "slash add + remove reached P2 as a removal")
+
+---------------------------------------------------------------- scenario 8
+print("== 8. seen enemies, wins and losses, kept between sessions")
+local W = online["P3"]
+local wenv = W.env
+local wunits = {
+  nameplate1 = { name = "Stabby", class = "ROGUE", level = 60 },
+  nameplate2 = { name = "Frosty", class = "MAGE", level = 59 },
+}
+local dead, targets, inCombat = {}, {}, false
+local function U(u) return wunits[u] end
+wenv.UnitExists = function(u) return U(u) ~= nil end
+wenv.UnitIsPlayer = function(u) return U(u) ~= nil end
+wenv.UnitName = function(u) if u == "player" then return "P3" end return U(u) and U(u).name end
+wenv.UnitClass = function(u) return "x", U(u) and U(u).class end
+wenv.UnitLevel = function(u) return U(u) and U(u).level end
+wenv.UnitIsEnemy = function() return true end
+wenv.UnitIsDeadOrGhost = function(u) return U(u) and dead[U(u).name] or false end
+wenv.UnitAffectingCombat = function() return inCombat end
+wenv.UnitIsUnit = function(a, b)
+  if b == "player" then local who = a:match("^(.-)target$") return who and targets[who] == "player" or false end
+  if b == "target" then return targets.player == a end
+  return false
+end
+wenv.GetRealZoneText = function() return "Stranglethorn Vale" end
+wenv.C_NamePlate = { GetNamePlates = function()
+  local list = {}
+  for u in pairs(wunits) do list[#list+1] = { namePlateUnitToken = u } end
+  return list
+end }
+W.sounds = {}
+Run(1)
+local sk, fk = W.ns.Key("Stabby", "Forever"), W.ns.Key("Frosty", "Forever")
+Check(W.ns.Enemy(sk) and W.ns.Enemy(fk), "both enemies are in the seen database")
+Check(W.ns.Enemy(sk).times == 1, "seen once so far (" .. tostring(W.ns.Enemy(sk).times) .. ")")
+local nearbySounds = 0
+for _, snd in ipairs(W.sounds) do if snd == "detected-nearby" then nearbySounds = nearbySounds + 1 end end
+Check(nearbySounds >= 1, "the nearby sound played for new enemies")
+-- I fight Frosty and he dies
+inCombat = true targets.player = "nameplate2" Run(1)
+dead.Frosty = true Run(1)
+Check(W.ns.Enemy(fk).w == 1, "killing an enemy I was fighting counts a win (" .. tostring(W.ns.Enemy(fk).w) .. ")")
+Run(2)
+Check(W.ns.Enemy(fk).w == 1, "the same kill isn't counted twice")
+-- Stabby didn't fight me and dies: no win
+dead.Stabby = true Run(1)
+Check(W.ns.Enemy(sk).w == 0, "an enemy I wasn't fighting dying isn't a win")
+dead.Stabby = nil
+-- Stabby targets me, I die
+targets.nameplate1 = "player" Run(1)
+W.log = {}
+Fire(W, "PLAYER_DEAD") Run(1)
+Check(W.ns.Enemy(sk).l == 1, "dying while Stabby targets me counts a loss")
+local said = false
+for _, l in ipairs(W.log) do if l:find("killed by") and l:find("Stabby") then said = true end end
+Check(said, "chat says who killed me")
+local saved = W.db
+Logout("P3")
+W = Login("P3", saved)
+Check(W.ns.Enemy(sk) and W.ns.Enemy(sk).l == 1 and W.ns.Enemy(fk).w == 1, "the record survives logging out and back in")
+local w, l, n = W.ns.Totals()
+Check(w == 1 and l == 1 and n >= 2, "totals: 1 win, 1 loss (" .. w .. ", " .. l .. ", " .. n .. ")")
+Run(61)
+Fire(W, "CHAT_MSG_COMBAT_HONOR_GAIN", "Stabby dies, honorable kill Rank: Scout (Estimated Honor Points: 12)")
+Check(W.ns.Enemy(sk).w == 1, "an honourable kill counts as a win")
+Fire(W, "CHAT_MSG_COMBAT_HONOR_GAIN", "Stabby dies, honorable kill Rank: Scout (Estimated Honor Points: 12)")
+Check(W.ns.Enemy(sk).w == 1, "and isn't counted twice")
 
 local errs = 0
 for _, c in pairs(clients) do if c.ns then errs = errs + Errors(c) end end

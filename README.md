@@ -16,9 +16,11 @@ One kill-on-sight list for the whole guild. Add someone and every guild member r
 
 - **A warning when they show up.** When a player on the list appears near you (on a nameplate, as your target or under your mouse), you get a banner, a warning sound and a line in chat with why they're on the list and who added them.
 - **The guild hears about it.** Your guildmates see "*Name* spotted by *you* in *Goldshire, Elwynn Forest*" in their chat.
-- **Nearby enemies.** A small window lists the enemy players around you, the ones on the list on top in red. Left-click a name to target them; right-click to add or remove them.
+- **Horde Scum Nearby.** A small window lists the enemy players around you, the ones on the list on top in red, with your wins and losses against each. Left-click a name to target them; right-click to add or remove them.
 - **Always in sync.** Anything added, changed or removed reaches every guild member online straight away. Anyone who was offline catches up a few seconds after logging in, removals included.
 - **Tooltips.** Listed players show "Kill on sight" and the reason on their tooltip.
+- **Your record, kept forever.** Every enemy player you come across is remembered: when and where you last saw them, how often, and your wins and losses against them. Hover a name in the nearby window for your record against them, or open the **Recently Seen** page in `/kos` to see everyone.
+- **Spy's alert sounds** for listed players, guild sightings and new enemies nearby.
 
 Inspired by the addon Spy.
 
@@ -61,7 +63,9 @@ You'll be asked for a reason. It's optional, but it's what the whole guild sees 
 | `/kos remove <name>` | Take someone off the list (for everyone). |
 | `/kos reason <name> <reason>` | Change someone's reason. |
 | `/kos check <name>` | Is this player on the list? |
-| `/kos nearby` | Show or hide the nearby enemies window. |
+| `/kos seen` | Everyone you've come across, with your wins and losses against them. |
+| `/kos nearby` | Show or hide the Horde Scum Nearby window. |
+| `/kos plates` | Turn on enemy nameplates, so enemies are spotted as soon as they're in range. |
 | `/kos options` | Open the options. |
 | `/kos sync` | Compare lists with the guild now. You shouldn't need this: it happens on its own at login. |
 | `/kos test` | Show a test warning. |
@@ -70,7 +74,7 @@ You'll be asked for a reason. It's optional, but it's what the whole guild sees 
 
 ## Options (`/kos options`)
 
-Turn each part of the warning on or off (banner, sound, chat), whether you tell the guild when you spot someone, whether you see the guild's sightings, and whether the nearby window shows every enemy player or only listed ones.
+Turn each part of the warning on or off (banner, sounds, chat), the sound for every new enemy nearby, whether you tell the guild when you spot someone, whether you see the guild's sightings, and whether the nearby window shows every enemy player or only listed ones.
 
 ## Good to know
 
@@ -78,7 +82,13 @@ Turn each part of the warning on or off (banner, sound, chat), whether you tell 
 - **Sharing only works within the guild**, through the game's hidden addon messages. Nothing is sent anywhere else.
 - **In combat** the nearby window can't take new rows (the game doesn't allow it), so newcomers are counted at the bottom and get their row when combat ends. The warning works in combat either way.
 - **In instances** the game hides player names from addons, so listed players aren't spotted there.
+- **Turn on enemy nameplates** (`/kos plates`). That's how enemies get spotted the moment they come into range; without them, only when you target or mouse over someone.
+- **Wins and losses** are worked out from what the game lets addons see (Forever doesn't let addons read the combat log, which Spy uses). A win is an enemy you were fighting dying, or an honourable kill; a loss is dying while an enemy player was attacking you. Your record stays on your PC and isn't shared.
 - `/kos status` shows a *list fingerprint*. Once everyone is in sync, it's the same for every guild member.
+
+## Credits
+
+Inspired by Spy. The alert sounds come from Spy.
 
 ## For developers
 

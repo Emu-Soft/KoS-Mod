@@ -232,7 +232,19 @@ nearby:Hide()
 
 nearby.title = Text(nearby, "GameFontNormalSmall")
 nearby.title:SetPoint("TOPLEFT", 6, -5)
-nearby.title:SetText("|cffe03c3cBH&G|r Nearby")
+nearby.title:SetText("Horde Scum Nearby")
+-- Hovering the window: your record against everyone so far.
+nearby:SetScript("OnEnter", function(self)
+	if not ns.db then return end
+	local w, l, n = ns.Totals()
+	GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+	GameTooltip:AddLine("Horde Scum Nearby")
+	GameTooltip:AddLine("Your record: " .. ns.Score({ w = w, l = l }), 1, 1, 1)
+	GameTooltip:AddLine(n .. " enemy player" .. (n == 1 and "" or "s") .. " seen so far", 0.6, 0.6, 0.6)
+	GameTooltip:AddLine("Hover a name for your record against them. /kos to see everyone you've met.", 0.5, 0.8, 1, true)
+	GameTooltip:Show()
+end)
+nearby:SetScript("OnLeave", function() GameTooltip:Hide() end)
 nearby.footer = Text(nearby, "GameFontDisableSmall")
 nearby.footer:SetPoint("BOTTOMLEFT", 6, 4)
 
@@ -296,6 +308,7 @@ for i = 1, NEARBY_ROWS do
 			GameTooltip:AddLine("Kill on sight" .. (e.w and (": " .. e.w) or ""), 1, 0.2, 0.2, true)
 			GameTooltip:AddLine("Added by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a), 0.6, 0.6, 0.6)
 		end
+		ns.AddStatsLines(GameTooltip, self.key)
 		GameTooltip:AddLine("Left-click: target   Right-click: kill list", 0.5, 0.8, 1)
 		GameTooltip:Show()
 	end)
@@ -309,7 +322,9 @@ local function FillRowText(row, item)
 	local level = (n.level and n.level > 0) and (" |cffaaaaaa" .. n.level .. "|r") or ""
 	row.name:SetText(NameColor(n.class, n.name) .. level)
 	local age = math.floor(GetTime() - n.seen)
-	row.right:SetText(e and "|cffff3030KOS|r" or (age < 5 and "now" or (age .. "s")))
+	local rec = ns.Enemy(item.key)
+	local score = (rec and ((rec.w or 0) + (rec.l or 0)) > 0) and ("|cff40ff40" .. rec.w .. "|r-|cffff4040" .. rec.l .. "|r ") or ""
+	row.right:SetText(score .. (e and "|cffff3030KOS|r" or (age < 5 and "now" or (age .. "s"))))
 	row.bg:SetShown(e ~= nil)
 end
 
@@ -355,7 +370,7 @@ local function LayoutNearby()
 	local more = #list - count
 	nearby.footer:SetText(more > 0 and ("+" .. more .. " more") or (#list == 0 and "No enemies nearby" or ""))
 	nearby:SetHeight(20 + count * ROW_H + 16)
-	nearby.title:SetText("|cffe03c3cBH&G|r Nearby" .. (#list > 0 and (" (" .. #list .. ")") or ""))
+	nearby.title:SetText("Horde Scum Nearby" .. (#list > 0 and (" (" .. #list .. ")") or ""))
 	local want = ns.Setting("nearby")
 	if want and not nearby:IsShown() then nearby:Show() elseif not want and nearby:IsShown() then nearby:Hide() end
 end
@@ -398,6 +413,10 @@ tinsert(UISpecialFrames, "BHGKillListWindow")
 win.title = Text(win, "GameFontNormal")
 win.title:SetPoint("TOPLEFT", 10, -8)
 
+-- Two pages: the guild's kill list, and everyone you've seen (with your
+-- wins and losses against them).
+local mode = "kos"
+
 local close = CreateFrame("Button", nil, win, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
 
@@ -429,6 +448,12 @@ addName:SetPoint("LEFT", addTarget, "RIGHT", 4, 0)
 local optionsBtn = Button("Options", 80, function() ns.ToggleOptions() end)
 optionsBtn:SetPoint("LEFT", addName, "RIGHT", 4, 0)
 
+local RefreshList
+local tabSeen = Button("Recently Seen", 110, function() ns.ShowPage("seen") end)
+tabSeen:SetPoint("TOPRIGHT", -28, -5)
+local tabKos = Button("Kill List", 80, function() ns.ShowPage("kos") end)
+tabKos:SetPoint("RIGHT", tabSeen, "LEFT", -4, 0)
+
 local listArea = CreateFrame("Frame", nil, win)
 listArea:SetPoint("TOPLEFT", 6, -56)
 listArea:SetPoint("BOTTOMRIGHT", -6, 34)
@@ -450,15 +475,13 @@ local offset = 0
 local filtered = {}
 local lrows = {}
 
-local function Matches(e, q)
+local function Matches(fields, q)
 	if q == "" then return true end
-	for _, f in ipairs({ e.n, e.r, e.g, e.w, e.b, e.c }) do
+	for _, f in ipairs(fields) do
 		if type(f) == "string" and f:lower():find(q, 1, true) then return true end
 	end
 	return false
 end
-
-local RefreshList
 
 for i = 1, LIST_ROWS do
 	local row = CreateFrame("Button", nil, listArea)
@@ -488,14 +511,35 @@ for i = 1, LIST_ROWS do
 	row.edit:SetSize(50, 20)
 	row.edit:SetPoint("RIGHT", -56, 0)
 	row.edit:SetText("Edit")
-	row.edit:SetScript("OnClick", function() if row.key then ns.AskEditReason(row.key) end end)
+	row.edit:SetScript("OnClick", function()
+		if not row.key then return end
+		if ns.Get(row.key) then ns.AskEditReason(row.key) return end
+		local rec = ns.Enemy(row.key)
+		if rec then ns.AskReason({ name = rec.n, realm = rec.r, class = rec.c, guild = rec.g, level = rec.lv }) end
+	end)
 	row.remove = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
 	row.remove:SetSize(52, 20)
 	row.remove:SetPoint("RIGHT", -2, 0)
 	row.remove:SetText("Remove")
 	row.remove:SetScript("OnClick", function() if row.key then ns.AskRemove(row.key) end end)
 	row:SetScript("OnEnter", function(self)
-		local e = self.key and ns.Get(self.key)
+		if not self.key then return end
+		local e = ns.Get(self.key)
+		if mode == "seen" then
+			local rec = ns.Enemy(self.key)
+			if not rec then return end
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:AddLine(ns.ColorName({ n = rec.n, r = rec.r, c = rec.c }))
+			if rec.g then GameTooltip:AddLine("<" .. rec.g .. ">", 0.7, 0.7, 0.7) end
+			if rec.lv or rec.race then GameTooltip:AddLine(((rec.lv and rec.lv > 0 and ("Level " .. rec.lv .. " ")) or "") .. (rec.race or ""), 1, 1, 1) end
+			ns.AddStatsLines(GameTooltip, self.key)
+			GameTooltip:AddLine("Last seen " .. ns.Ago(rec.last) .. (rec.zone and rec.zone ~= "" and (" in " .. rec.zone) or ""), 0.6, 0.6, 0.6, true)
+			if rec.lastWin then GameTooltip:AddLine("Last killed them " .. ns.Ago(rec.lastWin), 0.4, 1, 0.4) end
+			if rec.lastLoss then GameTooltip:AddLine("Last killed by them " .. ns.Ago(rec.lastLoss), 1, 0.4, 0.4) end
+			if e then GameTooltip:AddLine("On the kill list" .. (e.w and (": " .. e.w) or ""), 1, 0.2, 0.2, true) end
+			GameTooltip:Show()
+			return
+		end
 		if not e then return end
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		GameTooltip:AddLine(ns.ColorName(e))
@@ -506,6 +550,7 @@ for i = 1, LIST_ROWS do
 		if e.seen then
 			GameTooltip:AddLine("Last seen " .. ns.Ago(e.seen) .. (e.sz and e.sz ~= "" and (" in " .. e.sz) or "") .. (e.sb and (" by " .. e.sb) or ""), 0.6, 0.6, 0.6, true)
 		end
+		ns.AddStatsLines(GameTooltip, self.key)
 		GameTooltip:Show()
 	end)
 	row:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -524,35 +569,79 @@ emptyText:SetPoint("CENTER")
 emptyText:SetWidth(400)
 emptyText:SetWordWrap(true)
 
+local function FillKosRow(row, e)
+	row.key = ns.Key(e.n, e.r)
+	local level = e.lv and e.lv > 0 and ("  |cffaaaaaa" .. e.lv .. "|r") or ""
+	local guild = e.g and ("  |cff888888<" .. e.g .. ">|r") or ""
+	row.name:SetText(ns.ColorName(e) .. level .. guild)
+	row.why:SetText(e.w or "|cff777777No reason given|r")
+	row.why:SetTextColor(1, 0.75, 0.75)
+	local rec = ns.Enemy(row.key)
+	local score = (rec and ((rec.w or 0) + (rec.l or 0)) > 0) and (ns.Score(rec) .. "  ") or ""
+	row.by:SetText(score .. "by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a))
+	row.seen:SetText(e.seen and ("seen " .. ns.Ago(e.seen)) or "not seen yet")
+	row.edit:SetText("Edit")
+	row.edit:Show()
+	row.remove:Show()
+end
+
+local function FillSeenRow(row, item)
+	local rec = item.rec
+	row.key = item.key
+	local level = rec.lv and rec.lv > 0 and ("  |cffaaaaaa" .. rec.lv .. "|r") or ""
+	local guild = rec.g and ("  |cff888888<" .. rec.g .. ">|r") or ""
+	row.name:SetText(ns.ColorName({ n = rec.n, r = rec.r, c = rec.c }) .. level .. guild)
+	local times = rec.times or 1
+	row.why:SetText((rec.zone and rec.zone ~= "" and rec.zone or "Somewhere") .. "  |cff888888(seen " .. times .. " time" .. (times == 1 and "" or "s") .. ")|r")
+	row.why:SetTextColor(0.85, 0.85, 0.85)
+	row.by:SetText(ns.Score(rec))
+	row.seen:SetText("seen " .. ns.Ago(rec.last))
+	local listed = ns.Get(item.key) ~= nil
+	row.edit:SetText(listed and "Edit" or "KoS")
+	row.edit:Show()
+	row.remove:SetShown(listed)
+end
+
 RefreshList = function()
 	if not win:IsShown() or not ns.db then return end
 	local q = (search:GetText() or ""):lower()
 	search.hint:SetShown(q == "" and not search:HasFocus())
 	filtered = {}
-	for _, e in ipairs(ns.List()) do
-		if Matches(e, q) then filtered[#filtered + 1] = e end
+	if mode == "seen" then
+		for _, item in ipairs(ns.EnemyList()) do
+			local r = item.rec
+			if Matches({ r.n, r.r, r.g, r.c, r.race, r.zone }, q) then filtered[#filtered + 1] = item end
+		end
+	else
+		for _, e in ipairs(ns.List()) do
+			if Matches({ e.n, e.r, e.g, e.w, e.b, e.c }, q) then filtered[#filtered + 1] = e end
+		end
 	end
 	offset = math.max(0, math.min(offset, math.max(0, #filtered - LIST_ROWS)))
 	for i, row in ipairs(lrows) do
-		local e = filtered[offset + i]
-		if e then
-			row.key = ns.Key(e.n, e.r)
-			local level = e.lv and e.lv > 0 and ("  |cffaaaaaa" .. e.lv .. "|r") or ""
-			local guild = e.g and ("  |cff888888<" .. e.g .. ">|r") or ""
-			row.name:SetText(ns.ColorName(e) .. level .. guild)
-			row.why:SetText(e.w or "|cff777777No reason given|r")
-			row.by:SetText("by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a))
-			row.seen:SetText(e.seen and ("seen " .. ns.Ago(e.seen)) or "not seen yet")
+		local item = filtered[offset + i]
+		if item then
+			if mode == "seen" then FillSeenRow(row, item) else FillKosRow(row, item) end
 			row:Show()
 		else
 			row.key = nil
 			row:Hide()
 		end
 	end
-	local total = ns.Count()
-	win.title:SetText("|cffe03c3cBH&G Kill List|r  |cffaaaaaa" .. total .. " player" .. (total == 1 and "" or "s") .. "|r")
+	tabKos:SetEnabled(mode ~= "kos")
+	tabSeen:SetEnabled(mode ~= "seen")
+	local total
+	if mode == "seen" then
+		local w, l, n = ns.Totals()
+		total = n
+		win.title:SetText("|cffe03c3cRecently Seen|r  |cffaaaaaa" .. n .. " enemies|r  " .. ns.Score({ w = w, l = l }))
+	else
+		total = ns.Count()
+		win.title:SetText("|cffe03c3cBH&G Kill List|r  |cffaaaaaa" .. total .. " player" .. (total == 1 and "" or "s") .. "|r")
+	end
 	if total == 0 then
-		emptyText:SetText("Nobody on the list yet.\nTarget an enemy and click Add target, or right-click a player's name.")
+		emptyText:SetText(mode == "seen" and "No enemy players seen yet. Everyone you come across is kept here, with your wins and losses against them."
+			or "Nobody on the list yet.\nTarget an enemy and click Add target, or right-click a player's name.")
 	elseif #filtered == 0 then
 		emptyText:SetText("No one matches \"" .. q .. "\".")
 	else
@@ -560,9 +649,20 @@ RefreshList = function()
 	end
 	local first, last = math.min(#filtered, offset + 1), math.min(#filtered, offset + LIST_ROWS)
 	local range = (#filtered > LIST_ROWS) and (first .. "-" .. last .. " of " .. #filtered .. ", scroll for more.  ") or ""
+	if mode == "seen" then
+		status:SetText(range .. "Kept on this PC. Wins and losses are worked out from what the game shows addons.")
+		return
+	end
 	local peers = 0
 	for _, t in pairs(ns.sync.peers) do if GetTime() - t < 3600 then peers = peers + 1 end end
 	status:SetText(range .. (IsInGuild() and ("Shared with the guild" .. (peers > 0 and (" (" .. peers .. " heard from)") or "")) or "Not in a guild: nothing is shared"))
+end
+
+function ns.ShowPage(page)
+	mode = page
+	offset = 0
+	if ns.CloseOptions then ns.CloseOptions() end
+	if not win:IsShown() then win:Show() else RefreshList() end
 end
 
 search:SetScript("OnTextChanged", function() offset = 0 RefreshList() end)
@@ -574,6 +674,15 @@ win:SetScript("OnShow", function() RefreshList() end)
 
 ns.Listen("LIST_CHANGED", function() RefreshList() end)
 ns.Listen("SEEN", function() RefreshList() end)
+ns.Listen("STATS_CHANGED", function() RefreshList() end)
+local lastSeenRefresh = 0
+ns.Listen("TICK", function()
+	-- The seen page changes as enemies come and go; keep it fresh.
+	if mode == "seen" and GetTime() - lastSeenRefresh > 2 then
+		lastSeenRefresh = GetTime()
+		RefreshList()
+	end
+end)
 
 -----------------------------------------------------------------------
 -- Options (inside the list window)
@@ -586,7 +695,8 @@ opts:Hide()
 
 local OPTIONS = {
 	{ "banner", "Show a big warning when a listed player shows up" },
-	{ "sound", "Play a warning sound" },
+	{ "sound", "Play the warning sounds (kill list, guild sightings, adding and removing)" },
+	{ "nearbySound", "Play a sound for every new enemy player nearby" },
 	{ "chat", "Write the warning in chat" },
 	{ "shareSightings", "Tell the guild when I spot a listed player" },
 	{ "guildSightings", "Show the guild's sightings in my chat" },
@@ -630,6 +740,19 @@ moveBtn:SetPoint("LEFT", testBtn, "RIGHT", 6, 0)
 moveBtn:SetText("Move warning")
 moveBtn:SetScript("OnClick", function() ns.ToggleBannerMove() end)
 
+local platesBtn = CreateFrame("Button", nil, opts, "UIPanelButtonTemplate")
+platesBtn:SetSize(170, 22)
+platesBtn:SetPoint("LEFT", moveBtn, "RIGHT", 6, 0)
+platesBtn:SetText("Turn on enemy nameplates")
+platesBtn:SetScript("OnClick", function() ns.TurnOnEnemyPlates() end)
+platesBtn:SetScript("OnEnter", function(self)
+	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	GameTooltip:AddLine("Enemy nameplates")
+	GameTooltip:AddLine("With enemy nameplates on, enemies are spotted the moment they come into range. With them off, only when you target or mouse over them.", 1, 1, 1, true)
+	GameTooltip:Show()
+end)
+platesBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 local optsNote = Text(opts, "GameFontDisableSmall")
 optsNote:SetPoint("TOPLEFT", testBtn, "BOTTOMLEFT", 0, -14)
 optsNote:SetWidth(460)
@@ -642,7 +765,12 @@ function ns.ToggleOptions()
 	listArea:SetShown(not show)
 	optionsBtn:SetText(show and "List" or "Options")
 	for _, cb in ipairs(checks) do cb:SetChecked(ns.Setting(cb.key)) end
+	platesBtn:SetEnabled(ns.EnemyPlatesOn() ~= true)
 	if not win:IsShown() then win:Show() end
+end
+
+function ns.CloseOptions()
+	if opts:IsShown() then ns.ToggleOptions() end
 end
 
 function ns.ToggleWindow(showOptions)

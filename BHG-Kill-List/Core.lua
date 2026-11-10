@@ -202,6 +202,7 @@ end
 
 ns.DEFAULTS = {
 	sound = true,          -- play a warning when a listed player shows up
+	nearbySound = true,    -- play a sound for every new enemy player nearby
 	banner = true,         -- big on-screen warning
 	chat = true,           -- line in chat
 	shareSightings = true, -- tell the guild when you spot a listed player

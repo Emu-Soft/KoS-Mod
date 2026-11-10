@@ -2,6 +2,19 @@
 
 Newest first. Each version has up to three sections: New, Changed, Fixed. The release button builds each GitHub release's description from this file.
 
+## 1.1.0
+
+### New
+- **Recently Seen** page in `/kos` (or `/kos seen`): every enemy player you've come across, newest first, with where you last saw them, how often, and your wins and losses against them. It's kept between sessions and builds up over time.
+- Your record against each enemy (wins and losses) shows when you hover them in the nearby window, on their tooltip, and next to their name. Hover the nearby window itself for your overall record.
+- Wins: an enemy player you were fighting dies, or the game gives you an honourable kill for them. Losses: you die while an enemy player was attacking you.
+- Spy's alert sounds: one for someone on the kill list, one when a guildmate spots someone on it, one for any new enemy nearby (can be turned off in the options), and sounds for adding and removing players.
+- `/kos plates` and an options button to turn on enemy nameplates, which spot enemies as soon as they're in range. You get a reminder at login if they're off.
+
+### Changed
+- The nearby window is now called **Horde Scum Nearby**.
+- Enemies are spotted faster: nameplates, your target, focus, mouseover and your target's target are checked five times a second, and your party's and raid's targets every second.
+
 ## 1.0.0
 
 ### New
