@@ -28,7 +28,21 @@ end
 
 local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
 
-local function SavePos(f, key)
+-- Positions are kept by centre, or by top-left corner for a window that
+-- changes height (topLeft = true) so its top edge stays put and it only
+-- grows downwards.
+local function SavePos(f, key, topLeft)
+	if topLeft then
+		local x, y = f:GetLeft(), f:GetTop()
+		if x and y then ns.db.pos[key] = { left = x, top = y } end
+		-- Dragging leaves the window anchored wherever the game chose;
+		-- pin it by the top-left corner again.
+		if x and y and not InCombatLockdown() then
+			f:ClearAllPoints()
+			f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+		end
+		return
+	end
 	local x, y = f:GetCenter()
 	if x and y then ns.db.pos[key] = { x = x, y = y } end
 end
@@ -36,8 +50,16 @@ end
 local function RestorePos(f, key, point, rel, relPoint, dx, dy)
 	f:ClearAllPoints()
 	local p = ns.db.pos[key]
-	if p and p.x and p.y then
-		f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", p.x, p.y)
+	if p and p.left and p.top then
+		f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", p.left, p.top)
+	elseif p and p.x and p.y then
+		if point == "TOPLEFT" then
+			-- Saved by centre (older versions): turn it into the top-left corner.
+			local w, h = f:GetWidth() or 0, f:GetHeight() or 0
+			f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", p.x - w / 2, p.y + h / 2)
+		else
+			f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", p.x, p.y)
+		end
 	else
 		f:SetPoint(point, rel, relPoint, dx, dy)
 	end
@@ -227,7 +249,7 @@ nearby:SetMovable(true)
 nearby:EnableMouse(true)
 nearby:RegisterForDrag("LeftButton")
 nearby:SetScript("OnDragStart", function(self) if not InCombatLockdown() then self:StartMoving() end end)
-nearby:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() SavePos(self, "nearby") end)
+nearby:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() SavePos(self, "nearby", true) end)
 Backdrop(nearby, 0.75)
 nearby:Hide()
 
@@ -278,7 +300,12 @@ local function MakeRow(i)
 	local row = CreateFrame("Button", ns.FRAME_PREFIX .. "NearbyRow" .. i, nearby, "SecureActionButtonTemplate")
 	row:SetSize(NEARBY_W - 8, ROW_H)
 	row:SetPoint("TOPLEFT", nearby, "TOPLEFT", 4, -20 - (i - 1) * ROW_H)
-	row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	-- Up and down both registered: with the game's "cast on key down"
+	-- setting on (the default), a secure button only acts on the press,
+	-- and registering only the release left left-click doing nothing.
+	-- useOnKeyDown = false makes it act once, on the release, either way.
+	row:RegisterForClicks("AnyUp", "AnyDown")
+	row:SetAttribute("useOnKeyDown", false)
 	row:SetAttribute("type1", "macro")
 	local hl = row:CreateTexture(nil, "HIGHLIGHT")
 	hl:SetAllPoints()
@@ -292,8 +319,8 @@ local function MakeRow(i)
 	row.info = nil
 	row.right = Text(row, "GameFontDisableSmall", "RIGHT")
 	row.right:SetPoint("RIGHT", -3, 0)
-	row:SetScript("PostClick", function(self, button)
-		if button == "RightButton" then RowMenu(self) end
+	row:SetScript("PostClick", function(self, button, down)
+		if button == "RightButton" and not down then RowMenu(self) end
 	end)
 	row:SetScript("OnEnter", function(self)
 		if not self.key then return end
@@ -804,7 +831,7 @@ end
 
 ns.Listen("DB_READY", function()
 	RestorePos(banner, "banner", "TOP", UIParent, "TOP", 0, -140)
-	RestorePos(nearby, "nearby", "LEFT", UIParent, "LEFT", 20, 120)
+	RestorePos(nearby, "nearby", "TOPLEFT", UIParent, "LEFT", 20, 230)
 	RestorePos(win, "window", "CENTER", UIParent, "CENTER", 0, 40)
 	if not InCombatLockdown() then LayoutNearby() end
 end)
