@@ -80,6 +80,7 @@ Turn each part of the warning on or off (banner, sounds, chat), the sound for ev
 ## Good to know
 
 - **Everyone shares one list.** Anyone with the addon can add or remove players, and it changes for the whole guild.
+- **Only enemies go on the list.** Players on your side can't be added: the addon checks the player itself, or by name your guild, your group and anyone it has seen on your side this session.
 - **Sharing only works within the guild**, through the game's hidden addon messages. Nothing is sent anywhere else.
 - **In combat** the nearby window can't take new rows (the game doesn't allow it), so newcomers are counted at the bottom and get their row when combat ends. The warning works in combat either way.
 - **In instances** the game hides player names from addons, so listed players aren't spotted there.

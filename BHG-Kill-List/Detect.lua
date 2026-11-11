@@ -47,6 +47,46 @@ local function Call(fn, ...)
 	return Plain(a), Plain(b), Plain(c)
 end
 
+-- Players this PC has seen on our side this session (key -> true).
+ns.allies = {}
+
+-- Guild members, by key, read from the roster when it changes.
+local guildKeys, guildKeysDirty = {}, true
+local function GuildKeys()
+	if not guildKeysDirty then return guildKeys end
+	guildKeysDirty = false
+	guildKeys = {}
+	local count = Call(GetNumGuildMembers) or 0
+	for i = 1, math.min(count, 1000) do
+		local full = Call(GetGuildRosterInfo, i)
+		local n, r = ns.SplitName(PlainText(full))
+		if n then guildKeys[ns.Key(n, r or ns.MyRealm())] = true end
+	end
+	return guildKeys
+end
+ns.On("GUILD_ROSTER_UPDATE", function() guildKeysDirty = true end)
+ns.On("PLAYER_GUILD_UPDATE", function() guildKeysDirty = true end)
+
+-- Is this player on our side? info.ally comes from reading them directly;
+-- otherwise: seen on our side this session, in the guild, or in the group.
+function ns.IsAlly(info)
+	if type(info) ~= "table" or not info.name then return false end
+	if info.ally ~= nil then return info.ally end
+	local key = ns.Key(info.name, info.realm or ns.MyRealm())
+	if ns.allies[key] or GuildKeys()[key] then return true end
+	local who = info.name
+	if info.realm and info.realm:lower() ~= ns.MyRealm():lower() then who = info.name .. "-" .. info.realm end
+	if Call(UnitInParty, who) or Call(UnitInRaid, who) then return true end
+	return false
+end
+
+-- Says no (and why) when someone tries to put an ally on the list.
+function ns.RefuseAlly(info)
+	if not ns.IsAlly(info) then return false end
+	ns.Print(ns.ProperName(info.name) .. " is on our side, so they can't go on the kill list.")
+	return true
+end
+
 function ns.ReadUnit(unit)
 	if not Call(UnitExists, unit) then return nil end
 	local isPlayer = Call(UnitIsPlayer, unit)
@@ -68,6 +108,14 @@ function ns.ReadUnit(unit)
 	local theirFaction = Call(UnitFactionGroup, unit)
 	local myFaction = Call(UnitFactionGroup, "player")
 	if theirFaction and myFaction and theirFaction ~= myFaction and theirFaction ~= "Neutral" then hostile = true end
+	-- On our side: same faction (even in a duel, where they can be attacked).
+	local ally
+	if theirFaction and myFaction and theirFaction ~= "Neutral" then
+		ally = theirFaction == myFaction
+	elseif not hostile then
+		ally = Call(UnitIsFriend, "player", unit) and true or nil
+	end
+	if ally then ns.allies[ns.Key(name, realm or ns.MyRealm())] = true end
 	return {
 		name = name,
 		realm = realm or ns.MyRealm(),
@@ -76,6 +124,7 @@ function ns.ReadUnit(unit)
 		race = type(race) == "string" and race or nil,
 		guild = type(guild) == "string" and guild ~= "" and guild or nil,
 		hostile = hostile and true or false,
+		ally = ally,
 		dead = dead and true or false,
 		unit = unit,
 	}
@@ -128,11 +177,22 @@ function ns.Alert(e, info, test)
 end
 
 local lastNearbySound = 0
+local allyNoted = {} -- key -> true once told that a listed player is on our side
 local WHERE_EVERY = 5 -- seconds between "last seen at" updates for a player in view
 
 local function Seen(info, fromCombatLog)
 	local key = ns.Key(info.name, info.realm)
 	local e = ns.Get(key)
+	if info.ally then
+		-- On the list but on our side (added by mistake, or by an older
+		-- version): no warning, just a one-time note on how to take them off.
+		if e and not allyNoted[key] then
+			allyNoted[key] = true
+			ns.Print(ns.ColorName(e) .. " is on the kill list but is on our side. Type |cffffd200/kos remove "
+				.. ns.ProperName(e.n) .. "|r to take them off.")
+		end
+		return
+	end
 	if not e and not info.hostile then return end
 
 	local n = ns.nearby[key]
@@ -480,12 +540,13 @@ local function AddMenuButton(_, rootDescription, contextData)
 	local info = MenuTarget(contextData)
 	if not info then return end
 	local key = ns.Key(info.name, info.realm)
+	if not ns.Get(key) and ns.IsAlly(info) then return end
 	rootDescription:CreateDivider()
 	if ns.Get(key) then
 		rootDescription:CreateButton("|cffe03c3cRemove from BH&G Kill List|r", function()
 			ns.RemoveWithMessage(key)
 		end)
-	else
+	elseif not ns.IsAlly(info) then
 		rootDescription:CreateButton("|cffe03c3cAdd to BH&G Kill List|r", function()
 			ns.AskReason(info)
 		end)
@@ -503,6 +564,7 @@ end
 -----------------------------------------------------------------------
 
 function ns.AddWithMessage(info, reason)
+	if ns.RefuseAlly(info) then return end
 	local e, isNew = ns.Add(info, reason)
 	if not e then
 		ns.Print("couldn't add that player.")

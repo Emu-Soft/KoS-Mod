@@ -55,7 +55,7 @@ read_globals = {
 	"UnitCanAttack",
 	"UnitClass",
 	"UnitExists",
-	"UnitFactionGroup",
+	"UnitFactionGroup", "UnitIsFriend", "UnitInParty", "UnitInRaid", "GetNumGuildMembers", "GetGuildRosterInfo",
 	"UnitIsEnemy",
 	"UnitIsPlayer",
 	"UnitIsUnit",

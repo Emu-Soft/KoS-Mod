@@ -2,6 +2,12 @@
 
 Newest first. Each version has up to three sections: New, Changed, Fixed. The release button builds each GitHub release's description from this file.
 
+## 1.2.3
+
+### Fixed
+- Players on your own side can't be put on the kill list any more: not from your target, the right-click menu, the nearby window or `/kos add`. By name, the addon checks your guild, your group and anyone it has seen on your side this session.
+- Someone on your side who is already on the list (added with an older version) no longer sets off a warning. You get one note in chat on how to take them off.
+
 ## 1.2.2
 
 ### Fixed

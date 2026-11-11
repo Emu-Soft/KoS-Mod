@@ -133,6 +133,7 @@ StaticPopupDialogs[ns.POPUP_PREFIX .. "REMOVE"] = {
 }
 
 function ns.AskReason(info)
+	if ns.RefuseAlly(info) then return end
 	local shown = NameColor(info.class, info.name)
 	StaticPopup_Show(ns.POPUP_PREFIX .. "REASON", shown, nil, { info = info })
 end
