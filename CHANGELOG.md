@@ -7,7 +7,7 @@ Newest first. Each version has up to three sections: New, Changed, Fixed. The re
 ### Fixed
 - Players on your own side can't be put on the kill list any more: not from your target, the right-click menu, the nearby window or `/kos add`. By name, the addon checks your guild, your group and anyone it has seen on your side this session.
 - Someone on your side who is already on the list (added with an older version) no longer sets off a warning. You get one note in chat on how to take them off.
-- Left-clicking a name in the Horde Scum Nearby window targets them again. It did nothing with the game's "cast on key down" setting on, which is the default.
+- Left-clicking a name in the Horde Scum Nearby window targets them. Players from elsewhere were targeted as "Xal-Thorn", which Forever doesn't recognise; it's now "Xal Thorn", the way the game shows them, and that's how they're shown in the addon too. You can also type a name that way.
 - `/kos clicks` writes each click on the Horde Scum Nearby window to chat, for bug reports.
 - The Horde Scum Nearby window keeps its top edge where you put it and only grows downwards.
 

@@ -11,7 +11,7 @@ local _, ns = ...
 local HELP = {
 	"/kos - open the kill list",
 	"/kos add - add your target (asks for a reason)",
-	"/kos add <name> [reason] - add someone by name (Name or Name-Realm)",
+	"/kos add <name> [reason] - add someone by name (Name, or Name-Realm for someone from elsewhere)",
 	"/kos remove <name> - take someone off the list (for everyone)",
 	"/kos reason <name> <reason> - change someone's reason",
 	"/kos check <name> - is this player on the list?",

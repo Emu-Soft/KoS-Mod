@@ -155,11 +155,13 @@ function ns.ProperName(name)
 	return name
 end
 
--- "Name-Realm" or "Name" -> name, realm (realm defaults to ours).
+-- "Name-Realm", "Name Realm" (how Forever shows it) or "Name" -> name,
+-- realm (realm defaults to ours).
 function ns.SplitName(full)
 	if type(full) ~= "string" then return nil end
 	full = full:gsub("^%s+", ""):gsub("%s+$", "")
 	local name, realm = full:match("^([^%-]+)%-(.+)$")
+	if not name then name, realm = full:match("^(%S+)%s+(%S+)$") end
 	if not name then name = full end
 	name = ns.Clean(name, 48)
 	if not name or name:find(" ") then return nil end
@@ -170,16 +172,17 @@ function ns.Key(name, realm)
 	return (name .. "-" .. (StripRealm(realm) or ns.MyRealm())):lower()
 end
 
--- How a player is shown: "Name" for our realm, "Name-Realm" otherwise.
+-- How a player is shown, and what /targetexact needs: "Name" for our
+-- realm, "Name Realm" otherwise. Forever shows (and targets) a player
+-- from elsewhere as "Xal Thorn": with a hyphen, /targetexact finds no one.
 function ns.DisplayName(e)
 	if not e then return "?" end
 	if e.r and e.r:lower() ~= ns.MyRealm():lower() then
-		return e.n .. "-" .. e.r
+		return e.n .. " " .. e.r
 	end
 	return e.n
 end
 
--- What /targetexact needs.
 function ns.TargetName(e)
 	return ns.DisplayName(e)
 end

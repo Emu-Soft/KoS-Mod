@@ -74,9 +74,12 @@ function ns.IsAlly(info)
 	if info.ally ~= nil then return info.ally end
 	local key = ns.Key(info.name, info.realm or ns.MyRealm())
 	if ns.allies[key] or GuildKeys()[key] then return true end
-	local who = info.name
-	if info.realm and info.realm:lower() ~= ns.MyRealm():lower() then who = info.name .. "-" .. info.realm end
+	local who, who2 = info.name, nil
+	if info.realm and info.realm:lower() ~= ns.MyRealm():lower() then
+		who, who2 = info.name .. "-" .. info.realm, info.name .. " " .. info.realm
+	end
 	if Call(UnitInParty, who) or Call(UnitInRaid, who) then return true end
+	if who2 and (Call(UnitInParty, who2) or Call(UnitInRaid, who2)) then return true end
 	return false
 end
 
