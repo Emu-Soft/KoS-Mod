@@ -23,6 +23,7 @@ local HELP = {
 	"/kos test - show a test warning",
 	"/kos move - move the warning",
 	"/kos status - what the addon can see (for bug reports)",
+	"/kos clicks - write clicks on the nearby window to chat (for bug reports)",
 	"/kos on | off - turn K-UI's kill list on or off (K-UI only)",
 }
 
@@ -149,6 +150,9 @@ local function Handler(msg)
 		ns.Print(ns.ToggleBannerMove() and "drag the warning where you want it, then type /kos move again." or "warning position saved.")
 	elseif cmd == "status" or cmd == "probe" then
 		Status()
+	elseif cmd == "clicks" then
+		ns.clickDebug = not ns.clickDebug
+		ns.Print(ns.clickDebug and "clicks on the nearby window are now written to chat. Type /kos clicks again to stop." or "click details off.")
 	else
 		for _, line in ipairs(HELP) do print("  " .. line) end
 	end

@@ -71,6 +71,7 @@ You'll be asked for a reason. It's optional, but it's what the whole guild sees 
 | `/kos test` | Show a test warning. |
 | `/kos move` | Move the warning banner. |
 | `/kos status` | What the addon can see. Handy for bug reports. |
+| `/kos clicks` | Write each click on the Horde Scum Nearby window to chat, for bug reports. |
 | `/kos off` / `on` | Turn Kain-UI Forever's kill list off or on (see below). |
 
 ## Options (`/kos options`)
