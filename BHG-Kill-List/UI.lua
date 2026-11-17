@@ -742,7 +742,7 @@ opts:Hide()
 
 local OPTIONS = {
 	{ "banner", "Show a big warning when a listed player shows up" },
-	{ "sound", "Play the warning sounds (kill list, guild sightings, adding and removing)" },
+	{ "sound", "Play the warning sounds (kill list, adding and removing)" },
 	{ "nearbySound", "Play a sound for every new enemy player nearby" },
 	{ "chat", "Write the warning in chat" },
 	{ "shareSightings", "Tell the guild when I spot a listed player" },

@@ -364,13 +364,17 @@ env.UnitIsEnemy = function() return true end
 env.UnitFactionGroup = function(u) if u == "player" then return "Alliance" end return "Horde" end
 env.GetRealZoneText = function() return "Elwynn Forest" end
 env.GetSubZoneText = function() return "Goldshire" end
-S1.log = {} S2.log = {}
+S1.log = {} S2.log = {} S1.sounds = {} S2.sounds = {}
 Fire(S1, "NAME_PLATE_UNIT_ADDED", "nameplate1") Run(5)
 local warned, heard = false, false
 for _, l in ipairs(S1.log) do if l:find("KILL ON SIGHT") and l:find("Gankboy") then warned = true end end
 for _, l in ipairs(S2.log) do if l:find("Gankboy") and l:find("spotted by P1") and l:find("Goldshire") then heard = true end end
 Check(warned, "P1 got the kill-on-sight warning")
 Check(heard, "P2 was told where P1 spotted him")
+local kosSound = false
+for _, snd in ipairs(S1.sounds) do if snd == "detected-kos" then kosSound = true end end
+Check(kosSound, "P1 heard the kill-on-sight sound")
+Check(#S2.sounds == 0, "P2 heard no sound for P1's sighting (" .. table.concat(S2.sounds, " ") .. ")")
 Check(S2.ns.Get(S2.ns.Key("Gankboy", "Forever")).c == "ROGUE", "the class P1 saw reached P2's list")
 Check(S1.ns.nearby[S1.ns.Key("Gankboy", "Forever")] ~= nil, "he's in P1's nearby list")
 S1.log = {}

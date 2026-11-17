@@ -2,6 +2,11 @@
 
 Newest first. Each version has up to three sections: New, Changed, Fixed. The release button builds each GitHub release's description from this file.
 
+## 1.2.4
+
+### Changed
+- A guildmate spotting someone on the kill list no longer plays a sound. You still get the line in chat saying who spotted them and where. The warning sound now only plays for listed players near you.
+
 ## 1.2.3
 
 ### Fixed

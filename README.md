@@ -20,7 +20,7 @@ One kill-on-sight list for the whole guild. Add someone and every guild member r
 - **Always in sync.** Anything added, changed or removed reaches every guild member online straight away. Anyone who was offline catches up a few seconds after logging in, removals included.
 - **Tooltips.** Listed players show "Kill on sight" and the reason on their tooltip.
 - **Your record, kept forever.** Every enemy player you come across is remembered: when and where you last saw them, how often, and your wins and losses against them. Hover a name in the nearby window for your record against them, or open the **Recently Seen** page in `/kos` to see everyone.
-- **Spy's alert sounds** for listed players, guild sightings and new enemies nearby.
+- **Spy's alert sounds** for listed players and new enemies near you.
 
 Inspired by the addon Spy.
 

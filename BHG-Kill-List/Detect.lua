@@ -22,7 +22,6 @@ local lastGuildNote = {} -- key -> GetTime()
 -- The Star Trek alerts from Spy.
 local SOUNDS = {
 	kos = "detected-kos.mp3",         -- someone on the list, near you
-	kosaway = "detected-kosaway.mp3", -- someone on the list, spotted by a guildmate
 	nearby = "detected-nearby.mp3",   -- any new enemy player nearby
 	add = "list-add.mp3",
 	remove = "list-remove.mp3",
@@ -460,8 +459,8 @@ ns.Listen("GUILD_SIGHTING", function(key, zone, sender)
 	if lastGuildNote[key] and GetTime() - lastGuildNote[key] < GUILD_NOTE_COOLDOWN then return end
 	lastGuildNote[key] = GetTime()
 	local where = (zone and zone ~= "") and (" in " .. zone) or ""
+	-- Chat only, no sound: the warning sound is for players near you.
 	ns.Print(ns.ColorName(e) .. " spotted by " .. ns.ShortSender(sender) .. where .. ".")
-	if ns.Setting("sound") then ns.PlaySound("kosaway") end
 	ns.Fire("SEEN", key)
 end)
 
