@@ -2,6 +2,12 @@
 
 Newest first. Each version has up to three sections: New, Changed, Fixed. The release button builds each GitHub release's description from this file.
 
+## 1.2.5
+
+### New
+- The Horde Scum Nearby window puts itself away when you go into a dungeon or raid, and comes back when you leave. It stays up in battlegrounds, arenas and the open world. If you closed it yourself, leaving a dungeon doesn't bring it back. To keep it up in dungeons too, untick "Hide the nearby window in dungeons and raids" in `/kos options`.
+- Guild sync keeps running while you're in a dungeon, so your list is up to date when you come out. `/kos status` says when the window is hidden for a dungeon.
+
 ## 1.2.4
 
 ### Changed

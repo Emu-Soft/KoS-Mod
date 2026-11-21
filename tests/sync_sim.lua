@@ -59,7 +59,7 @@ local function MakeEnv(c)
     pairs = pairs, ipairs = ipairs, type = type, tostring = tostring, tonumber = tonumber, select = select,
     pcall = pcall, error = error, next = next, setmetatable = setmetatable, unpack = unpack,
     string = string, table = table, math = math, time = os.time, tinsert = table.insert,
-    CreateFrame = function() local f = NewFrame() frames[#frames+1] = f return f end,
+    CreateFrame = function(_, name) local f = NewFrame() f.name = name frames[#frames+1] = f return f end,
     UIParent = NewFrame(), GameTooltip = NewFrame(), UISpecialFrames = {},
     StaticPopupDialogs = {}, SlashCmdList = {}, StaticPopup_Show = function() end,
     BackdropTemplateMixin = {}, Mixin = function(t) return t end,
@@ -461,6 +461,34 @@ Fire(W, "CHAT_MSG_COMBAT_HONOR_GAIN", "Stabby dies, honorable kill Rank: Scout (
 Check(W.ns.Enemy(sk).w == 1, "an honourable kill counts as a win")
 Fire(W, "CHAT_MSG_COMBAT_HONOR_GAIN", "Stabby dies, honorable kill Rank: Scout (Estimated Honor Points: 12)")
 Check(W.ns.Enemy(sk).w == 1, "and isn't counted twice")
+
+---------------------------------------------------------------- scenario 8b
+print("== 8b. the nearby window steps aside in dungeons and raids")
+local D = Login("Delver") Run(2)
+local nearbyFrame
+for _, f in ipairs(D.frames) do if f.name == "BHGKillListNearby" then nearbyFrame = f end end
+local function Enter(kind)
+  D.env.IsInInstance = function() return kind ~= "none", kind end
+  Fire(D, "PLAYER_ENTERING_WORLD")
+  return nearbyFrame.shown
+end
+Check(nearbyFrame and nearbyFrame.shown, "shown in the open world")
+Check(not Enter("party"), "hidden in a dungeon")
+Check(Enter("pvp"), "shown in a battleground")
+Check(Enter("arena"), "shown in an arena")
+Check(not Enter("raid"), "hidden in a raid")
+D.ns.SetSetting("hideInDungeons", false)
+Check(nearbyFrame.shown, "with the option off, it stays up in a raid")
+D.ns.SetSetting("hideInDungeons", true)
+Check(not nearbyFrame.shown, "option back on: hidden again")
+Check(Enter("none"), "back in the open world it comes back")
+D.ns.SetSetting("nearby", false) Enter("party")
+Check(not Enter("none"), "if you hid it yourself, leaving a dungeon doesn't bring it back")
+D.env.issecretvalue = function(v) return v == "party" end
+D.ns.SetSetting("nearby", true)
+Check(Enter("party"), "an unreadable instance type counts as the open world")
+D.env.issecretvalue = nil
+Logout("Delver")
 
 ---------------------------------------------------------------- scenario 9
 if KUI_FILE then

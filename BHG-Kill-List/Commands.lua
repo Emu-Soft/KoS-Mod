@@ -67,6 +67,7 @@ local function Status()
 		(TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall) and "yes" or "old style",
 		(Menu and Menu.ModifyMenu) and "yes" or "no",
 		CombatLogGetCurrentEventInfo and "yes" or "no (restricted on Forever)"))
+	say("nearby window: " .. (not ns.Setting("nearby") and "off" or ((ns.Setting("hideInDungeons") and ns.InDungeon()) and "hidden in this dungeon" or "on")) .. ".")
 	local any = false
 	for label, n in pairs(ns.errorCounts) do
 		any = true

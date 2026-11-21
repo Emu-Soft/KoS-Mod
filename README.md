@@ -16,7 +16,7 @@ One kill-on-sight list for the whole guild. Add someone and every guild member r
 
 - **A warning when they show up.** When a player on the list appears near you (on a nameplate, as your target or under your mouse), you get a banner, a warning sound and a line in chat with why they're on the list and who added them.
 - **The guild hears about it.** Your guildmates see "*Name* spotted by *you* in *Goldshire, Elwynn Forest*" in their chat.
-- **Horde Scum Nearby.** A small window lists the enemy players around you, the ones on the list on top in red, with your wins and losses against each. Left-click a name to target them; right-click to add or remove them.
+- **Horde Scum Nearby.** A small window lists the enemy players around you, the ones on the list on top in red, with your wins and losses against each. Left-click a name to target them; right-click to add or remove them. It puts itself away in dungeons and raids and comes back when you leave; battlegrounds keep it.
 - **Always in sync.** Anything added, changed or removed reaches every guild member online straight away. Anyone who was offline catches up a few seconds after logging in, removals included.
 - **Tooltips.** Listed players show "Kill on sight" and the reason on their tooltip.
 - **Your record, kept forever.** Every enemy player you come across is remembered: when and where you last saw them, how often, and your wins and losses against them. Hover a name in the nearby window for your record against them, or open the **Recently Seen** page in `/kos` to see everyone.
@@ -76,7 +76,7 @@ You'll be asked for a reason. It's optional, but it's what the whole guild sees 
 
 ## Options (`/kos options`)
 
-Turn each part of the warning on or off (banner, sounds, chat), the sound for every new enemy nearby, whether you tell the guild when you spot someone, whether you see the guild's sightings, and whether the nearby window shows every enemy player or only listed ones.
+Turn each part of the warning on or off (banner, sounds, chat), the sound for every new enemy nearby, whether you tell the guild when you spot someone, whether you see the guild's sightings, whether the nearby window shows every enemy player or only listed ones, and whether it hides in dungeons and raids.
 
 ## Good to know
 

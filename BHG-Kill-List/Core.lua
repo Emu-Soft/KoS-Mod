@@ -228,6 +228,7 @@ ns.DEFAULTS = {
 	shareSightings = true, -- tell the guild when you spot a listed player
 	guildSightings = true, -- show the guild's sightings in your chat
 	nearby = true,         -- show the nearby enemies window
+	hideInDungeons = true, -- put the nearby window away in dungeons and raids
 	nearbyAll = true,      -- list every enemy player nearby, not only listed ones
 	nearbyTime = 60,       -- seconds an enemy stays in the nearby window
 	alertCooldown = 60,    -- seconds before the same player warns again

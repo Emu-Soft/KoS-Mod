@@ -8,7 +8,7 @@ globals = {
 	"SLASH_BHGKILLLIST1", "SLASH_BHGKILLLIST2",
 }
 read_globals = {
-	"C_CVar", "GetCVar", "SetCVar", "GetNumGroupMembers", "IsInRaid", "PlaySoundFile",
+	"C_CVar", "GetCVar", "SetCVar", "GetNumGroupMembers", "IsInInstance", "IsInRaid", "PlaySoundFile",
 	"UnitAffectingCombat", "UnitIsDeadOrGhost",
 	"ACCEPT",
 	"BackdropTemplateMixin",
