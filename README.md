@@ -75,7 +75,7 @@ The Blacklist is a separate list for players on **our own side** that you'd rath
 - **When someone leaves your dungeon group**, a box comes up a few seconds later asking whether to blacklist them, with "Left *dungeon* early" filled in as the reason. The game doesn't say why someone left or whether they were removed, so it only ever asks; nobody is added unless you say yes. If two people leave close together (the end of a run) it doesn't ask.
 
 **What happens then:**
-- When they're in your group, join it or invite you, you get an orange **BLACKLISTED** banner, a sound and a line in chat with the reason and who added them.
+- When they're in your group, join it or invite you, you get an orange **BLACKLISTED** banner and a line in chat with the reason and who added them. The Blacklist plays no sounds.
 - When they whisper you or talk in a chat channel such as LookingForGroup, you get a line in chat (at most every ten minutes per player).
 - Their tooltip says they're on the guild Blacklist.
 

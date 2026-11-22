@@ -783,6 +783,8 @@ Fire(L1, "CHAT_MSG_SYSTEM", "Sneaky leaves the party.") Run(15)
 Check(Leaver("Sneaky") ~= nil, "with names hidden, the game's chat line still says who left")
 Group() Run(1)
 
+Check(#(L1.sounds or {}) == 0 and #(L2.sounds or {}) == 0, "the Blacklist plays no sounds")
+
 -- Who can't go on it.
 popups = {}
 env1.GetNumGuildMembers = function() return 1 end

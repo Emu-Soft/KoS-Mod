@@ -13,11 +13,11 @@ your group anyway; that's what the kill list is for), and neither can
 guildmates.
 
 A blacklisted player is pointed out when they
-  * are in your group, or join it (banner, sound, line in chat),
-  * invite you to a group (banner, sound, line in chat),
+  * are in your group, or join it (banner and a line in chat),
+  * invite you to a group (banner and a line in chat),
   * whisper you or talk in a chat channel such as LookingForGroup (a
     line in chat, at most every ten minutes per player).
-Their tooltip shows it too.
+Their tooltip shows it too. The Blacklist plays no sounds.
 
 When someone leaves your dungeon group, the addon offers to blacklist
 them. The game doesn't say why someone left (or was removed), so this
@@ -72,7 +72,6 @@ function ns.AddBlackWithMessage(info, reason)
 		return
 	end
 	if isNew then
-		if ns.Setting("sound") then ns.PlaySound("add") end
 		ns.Print("put " .. ns.ColorName(e) .. " on the guild Blacklist" .. (e.w and (": " .. e.w) or "") .. ". Guild members with the addon get it too.")
 	else
 		ns.Print(ns.ColorName(e) .. " is on the guild Blacklist" .. (e.w and (": " .. e.w) or "") .. ".")
@@ -83,7 +82,6 @@ end
 function ns.RemoveBlackWithMessage(key)
 	local e = ns.RemoveBlack(key)
 	if e then
-		if ns.Setting("sound") then ns.PlaySound("remove") end
 		ns.Print("took " .. ns.ColorName(e) .. " off the guild Blacklist.")
 	else
 		ns.Print("that player isn't on the guild Blacklist.")
@@ -107,7 +105,7 @@ end
 
 local lastWarn = {} -- key .. kind -> GetTime()
 
--- loud: banner, sound and flash as well as the line in chat.
+-- loud: the banner and a flash of the game's icon as well as the line in chat.
 local function Warn(e, how, kind, cooldown, loud)
 	if not ns.Setting(kind == "chat" and "blackChat" or "blackWarn") then return end
 	local id = ns.Key(e.n, e.r) .. "|" .. kind
@@ -116,9 +114,6 @@ local function Warn(e, how, kind, cooldown, loud)
 	ns.Print("|cffff9900BLACKLISTED:|r " .. ns.ColorName(e) .. " " .. how .. (e.w and (" - " .. e.w) or "")
 		.. " |cff999999(added by " .. ns.ShortSender(e.b) .. ")|r")
 	if not loud then return end
-	if ns.Setting("sound") and PlaySound and SOUNDKIT and SOUNDKIT.RAID_WARNING then
-		pcall(PlaySound, SOUNDKIT.RAID_WARNING, "Master")
-	end
 	if FlashClientIcon then pcall(FlashClientIcon) end
 	if ns.Setting("banner") and ns.ShowBanner then ns.ShowBanner(e, nil, "BLACKLISTED", how) end
 end
