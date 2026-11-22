@@ -21,6 +21,7 @@ One kill-on-sight list for the whole guild. Add someone and every guild member r
 - **Always in sync.** Anything added, changed or removed reaches every guild member online straight away. Anyone who was offline catches up a few seconds after logging in, removals included.
 - **Tooltips.** Listed players show "Kill on sight" and the reason on their tooltip.
 - **Your record, kept forever.** Every enemy player you come across is remembered: when and where you last saw them, how often, and your wins and losses against them. Hover a name in the nearby window for your record against them, or open the **Recently Seen** page in `/kos` to see everyone.
+- **A guild Blacklist for our own side.** Keep track of players who leave dungeons early, ninja loot and the like. You're warned when one of them is in your group, invites you or talks in chat, and the addon offers to blacklist someone who leaves your dungeon group.
 - **Spy's alert sounds** for listed players and new enemies near you.
 
 Inspired by the addon Spy.
@@ -63,6 +64,23 @@ You'll be asked for a reason. It's optional, but it's what the whole guild sees 
 
 Every member of a listed guild you come across sets off the warning, with the guild's reason. The game doesn't let addons see who is in an enemy guild, so a member is recognised the moment you see them and the game shows their guild, not before. When several members show up together you get the banner and sound once a minute for that guild and a line in chat for each one. Your own guild can't be added.
 
+## The guild Blacklist
+
+The Blacklist is a separate list for players on **our own side** that you'd rather not group with. It has nothing to do with kill on sight: nobody on it is ever called an enemy, and the kill list stays exactly as it is. It's shared with the guild the same way: an add, a new reason or a removal reaches everyone online straight away, and anyone offline catches up when they log in.
+
+**Adding someone:**
+- **Right-click** a group member's portrait or a name in chat and pick **Add to the guild Blacklist**.
+- **Target them** and type `/kos black`, or open the **Blacklist** page in `/kos` and click **Add target**.
+- **By name:** `/kos black Name a reason`, or **Add by name** on the Blacklist page.
+- **When someone leaves your dungeon group**, a box comes up a few seconds later asking whether to blacklist them, with "Left *dungeon* early" filled in as the reason. The game doesn't say why someone left or whether they were removed, so it only ever asks; nobody is added unless you say yes. If two people leave close together (the end of a run) it doesn't ask.
+
+**What happens then:**
+- When they're in your group, join it or invite you, you get an orange **BLACKLISTED** banner, a sound and a line in chat with the reason and who added them.
+- When they whisper you or talk in a chat channel such as LookingForGroup, you get a line in chat (at most every ten minutes per player).
+- Their tooltip says they're on the guild Blacklist.
+
+Enemies can't go on the Blacklist (they go on the kill list), and neither can guildmates. It works the same whichever side your guild is on. Each of the warnings and the leave question can be turned off in `/kos options`.
+
 ## Commands
 
 | Command | What it does |
@@ -71,12 +89,16 @@ Every member of a listed guild you come across sets off the warning, with the gu
 | `/kos add [name] [reason]` | Add your target, or someone by name. |
 | `/kos remove <name>` | Take someone off the list (for everyone). |
 | `/kos reason <name> <reason>` | Change someone's reason. |
-| `/kos check <name>` | Is this player (or guild) on the list? |
+| `/kos check <name>` | Is this player (or guild) on the kill list or the Blacklist? |
 | `/kos guild` | Put your target's whole guild on the list. |
 | `/kos guild add <guild>[: reason]` | Put a whole guild on the list by name. |
 | `/kos guild remove <guild>` | Take a guild off the list (for everyone). Players added one by one stay on it. |
 | `/kos guild reason <guild>: <reason>` | Change a guild's reason. |
 | `/kos guilds` | List the guilds on the kill list. |
+| `/kos black [name] [reason]` | Put your target, or someone by name, on the guild Blacklist. |
+| `/kos black remove <name>` | Take someone off the guild Blacklist (for everyone). |
+| `/kos black reason <name> <reason>` | Change someone's Blacklist reason. |
+| `/kos blacklist` | Open the guild Blacklist. `/kos black list` writes it in chat. |
 | `/kos seen` | Everyone you've come across, with your wins and losses against them. |
 | `/kos nearby` | Show or hide the Horde Scum Nearby window. |
 | `/kos plates` | Turn on enemy nameplates, so enemies are spotted as soon as they're in range. |
@@ -90,7 +112,7 @@ Every member of a listed guild you come across sets off the warning, with the gu
 
 ## Options (`/kos options`)
 
-Turn each part of the warning on or off (banner, sounds, chat), the sound for every new enemy nearby, whether you tell the guild when you spot someone, whether you see the guild's sightings, whether the nearby window shows every enemy player or only listed ones, and whether it hides in dungeons and raids.
+Turn each part of the warning on or off (banner, sounds, chat), the sound for every new enemy nearby, whether you tell the guild when you spot someone, whether you see the guild's sightings, whether the nearby window shows every enemy player or only listed ones, whether it hides in dungeons and raids, and the guild Blacklist's warnings and leave question.
 
 ## Good to know
 

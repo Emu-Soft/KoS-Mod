@@ -11,5 +11,6 @@ Core.lua
 Sync.lua
 Detect.lua
 Stats.lua
+Blacklist.lua
 UI.lua
 Commands.lua

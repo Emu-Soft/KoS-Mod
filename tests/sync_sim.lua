@@ -2,8 +2,9 @@
 -- once on one simulated clock, talking over a simulated guild channel.
 -- Checks that everyone's list ends up the same however they log in and
 -- out, that a big guild doesn't flood the channel, that spotting a
--- listed player warns you and tells the guild, and that the seen-enemies
--- database counts wins and losses and survives a relog.
+-- listed player warns you and tells the guild, that the seen-enemies
+-- database counts wins and losses and survives a relog, and that the
+-- guild Blacklist syncs and warns without touching the kill list.
 --
 --   lua5.1 tests/sync_sim.lua BHG-Kill-List [seed] [throttle chance] [KoS.lua]
 --
@@ -21,7 +22,15 @@ local DIR = arg[1]
 KUI_FILE = arg[4]
 THROTTLE = tonumber(arg[3])
 local OLD_DIR = arg[5]
-local FILES = { "Core.lua", "Sync.lua", "Detect.lua", "Stats.lua", "UI.lua", "Commands.lua" }
+-- The addon's files, in the order its toc loads them.
+local function TocFiles(dir)
+  local files = {}
+  for line in io.lines(dir .. "/BHG-Kill-List.toc") do
+    local file = line:match("^%s*([%w_]+%.lua)%s*$")
+    if file then files[#files+1] = file end
+  end
+  return files
+end
 
 local clock = 0
 local timers = {}         -- { at, fn, client, cancelled }
@@ -144,8 +153,9 @@ local function Login(name, db, addons)
   local standalone, kui
   if addons == "standalone" or addons == "both" or addons == "old" then
     standalone = {}
-    for _, file in ipairs(FILES) do
-      local chunk = assert(loadfile((addons == "old" and OLD_DIR or DIR) .. "/" .. file))
+    local dir = addons == "old" and OLD_DIR or DIR
+    for _, file in ipairs(TocFiles(dir)) do
+      local chunk = assert(loadfile(dir .. "/" .. file))
       setfenv(chunk, env)
       chunk("BHG-Kill-List", standalone)
     end
@@ -206,13 +216,16 @@ local function Run(seconds)
   end
 end
 
--- The player buckets and the guild list (playersOnly: just the players,
--- to compare with a version from before guilds).
+-- The player buckets, the guild list and the Blacklist (playersOnly:
+-- just the players, to compare with a version from before guilds).
 local function Fingerprint(c, playersOnly)
   local ns = c.ns
   local parts = {}
   for i, h in ipairs(ns.BucketHashes()) do parts[i] = h end
-  if not playersOnly then parts[#parts+1] = ns.GuildDigest() end
+  if not playersOnly then
+    parts[#parts+1] = ns.GuildDigest()
+    for _, h in ipairs(ns.BlackHashes()) do parts[#parts+1] = h end
+  end
   return table.concat(parts, ",")
 end
 
@@ -324,7 +337,7 @@ local before6 = totalMessages
 Login("Member1") -- someone reloads while in sync
 Run(120)
 print("     messages when an in-sync member reloads: " .. (totalMessages - before6))
-Check(totalMessages - before6 <= 2, "an in-sync login costs just its hello")
+Check(totalMessages - before6 <= 3, "an in-sync login costs just its hello (players, guilds, Blacklist)")
 
 ---------------------------------------------------------------- scenario 6
 print("== 6. random fuzz: 6 players, random adds/removes/edits, online and offline")
@@ -340,9 +353,13 @@ for round = 1, 40 do
     for _ = 1, math.random(1, 6) do
       local target = "Foe" .. math.random(1, 60)
       local r = math.random()
-      if r < 0.5 then Add(c, target, "r" .. math.random(1, 5))
-      elseif r < 0.8 then c.ns.Remove(c.ns.Key(target, "Forever"))
-      else c.ns.SetReason(c.ns.Key(target, "Forever"), "edit" .. math.random(100)) end
+      local key = c.ns.Key(target, "Forever")
+      if r < 0.4 then Add(c, target, "r" .. math.random(1, 5))
+      elseif r < 0.6 then c.ns.Remove(key)
+      elseif r < 0.7 then c.ns.SetReason(key, "edit" .. math.random(100))
+      elseif r < 0.85 then c.ns.AddBlack({ name = target, realm = "Forever" }, "b" .. math.random(1, 5))
+      elseif r < 0.95 then c.ns.RemoveBlack(key)
+      else c.ns.SetBlackReason(key, "bedit" .. math.random(100)) end
     end
   end
   Run(math.random(1, 40))
@@ -351,8 +368,8 @@ for _, n in ipairs(pool) do if not online[n] then Login(n) end end
 Run(900)
 Check(AllSame(), "all 6 in sync after everyone logs in")
 local counts = {}
-for _, n in ipairs(pool) do counts[#counts+1] = online[n].ns.Count() end
-print("     counts: " .. table.concat(counts, " "))
+for _, n in ipairs(pool) do counts[#counts+1] = online[n].ns.Count() .. "/" .. online[n].ns.BlackCount() end
+print("     counts (kill list/Blacklist): " .. table.concat(counts, " "))
 
 ---------------------------------------------------------------- scenario 7
 print("== 7. spotting a listed enemy: warning, and the guild hears where")
@@ -505,6 +522,7 @@ for n in pairs(online) do Logout(n) end
 -- Someone used the standalone addon for a while.
 local Old = Login("Oldtimer", nil, "standalone")
 Add(Old, "Ganker", "old grudge") Add(Old, "Camper", "camps the flight path")
+Old.ns.AddBlack({ name = "Leaverguy", realm = "Forever" }, "left mid-run")
 Old.ns.db.enemies[Old.ns.Key("Ganker", "Forever")] = { n = "Ganker", r = "Forever", w = 4, l = 2, times = 9, first = 1, last = 2 }
 Old.ns.SetSetting("nearbyAll", false)
 Run(10) Logout("Oldtimer")
@@ -524,6 +542,7 @@ local hellosBefore = 0
 local B = Login("Oldtimer", nil, "both")
 Check(B.kui.active and not B.standalone.active and B.standalone.slaved, "with both installed, K-UI runs and the standalone addon sleeps")
 Check(B.ns == B.kui and Has(B, "Ganker") and Has(B, "Camper"), "K-UI brought in the standalone addon's list")
+Check(B.kui.GetBlack(B.kui.Key("Leaverguy", "Forever")) ~= nil, "and its Blacklist")
 local rec = B.kui.Enemy(B.kui.Key("Ganker", "Forever"))
 Check(rec and rec.w == 4 and rec.l == 2 and rec.times == 9, "and its wins and losses")
 Check(B.kui.Setting("nearbyAll") == false, "and its settings")
@@ -531,8 +550,9 @@ B.sentCount = 0
 Run(120)
 Check(AllSame(), "Oldtimer, Kuser and Suser all have the same list")
 Check(Has(B, "Fromkui") and Has(B, "Fromstandalone"), "Oldtimer caught up with both")
--- Its hello (players and guilds) and one bucket: one copy talking, not two.
-Check(B.sentCount <= 4, "only one copy talks for Oldtimer (" .. B.sentCount .. " messages)")
+-- Its hello (players, guilds, Blacklist) and a bucket each for its
+-- players and its Blacklist (B + D, B + F): one copy talking, not two.
+Check(B.sentCount <= 7, "only one copy talks for Oldtimer (" .. B.sentCount .. " messages)")
 local slash = B.env.SlashCmdList.BHGKILLLIST
 B.log = {}
 slash("status")
@@ -656,6 +676,136 @@ Check(G2.ns.GetGuild("Horde Elite") ~= nil, "guilds still spread among the newer
 local before10 = totalMessages
 Logout("Guildy2") G2 = Login("Guildy2") Run(120)
 Check(totalMessages - before10 <= 3, "an in-sync login costs just its hello, older version online (" .. (totalMessages - before10) .. ")")
+end
+
+---------------------------------------------------------------- scenario 11
+print("== 11. the guild Blacklist")
+for n in pairs(online) do Logout(n) end
+local L1, L2 = Login("Black1"), Login("Black2")
+Run(60)
+local function BKey(name) return L1.ns.Key(name, "Forever") end
+local function Lines(c, ...)
+  local n = 0
+  for _, l in ipairs(c.log) do
+    local all = true
+    for _, bit in ipairs({ ... }) do if not l:find(bit, 1, true) then all = false end end
+    if all then n = n + 1 end
+  end
+  return n
+end
+local killBefore = L2.ns.Count()
+L2.log = {}
+Slash(L1, "black Quitter left at the last boss") Run(5)
+local q = L2.ns.GetBlack(BKey("Quitter"))
+Check(q and q.w == "left at the last boss", "a blacklisted player reached a guildmate with the reason")
+Check(Said(L2, "Quitter", "guild Blacklist", "Black1"), "and they were told in chat")
+Check(L2.ns.Count() == killBefore and not Has(L2, "Quitter"), "the Blacklist doesn't add to the kill list")
+Add(L1, "Bothlists", "kos") L1.ns.AddBlack({ name = "Bothlists", realm = "Forever" }, "also a leaver") Run(5)
+L1.ns.RemoveBlack(BKey("Bothlists")) Run(5)
+Check(Has(L2, "Bothlists") and not L2.ns.GetBlack(BKey("Bothlists")), "taking someone off the Blacklist leaves them on the kill list")
+Slash(L1, "black reason Quitter ninja looted") Run(5)
+Check(L2.ns.GetBlack(BKey("Quitter")).w == "ninja looted", "a new reason reached the guildmate")
+Logout("Black2")
+Slash(L1, "black Ragequit quit after one wipe") Slash(L1, "black remove Quitter") Run(5)
+local L3 = Login("Black3")
+L2 = Login("Black2") Run(120)
+Check(L2.ns.GetBlack(BKey("Ragequit")) and not L2.ns.GetBlack(BKey("Quitter")), "someone offline caught up with an add and a removal")
+Check(L3.ns.GetBlack(BKey("Ragequit")) ~= nil, "a fresh install caught up with the Blacklist")
+Check(AllSame(), "all three in sync, Blacklist included")
+
+-- Warnings: in your group, an invite, chat.
+local env1 = L1.env
+local group, inDungeon, popups = {}, false, {}
+env1.GetNumGroupMembers = function() return #group > 0 and #group + 1 or 0 end
+env1.IsInRaid = function() return false end
+env1.UnitName = function(u)
+  if u == "player" then return "Black1" end
+  local i = u:match("^party(%d)$")
+  return i and group[tonumber(i)] or nil
+end
+env1.UnitClass = function() return "Warrior", "WARRIOR" end
+env1.IsInInstance = function() return inDungeon, inDungeon and "party" or "none" end
+env1.GetRealZoneText = function() return "The Deadmines" end
+env1.StaticPopup_Show = function(which, a, _, data) popups[#popups+1] = { which = which, text = a, data = data } end
+local function Group(...)
+  group = { ... }
+  Fire(L1, "GROUP_ROSTER_UPDATE")
+end
+L1.log = {}
+Group("Ragequit", "Healer")
+Check(Said(L1, "BLACKLISTED", "Ragequit", "is in your group", "quit after one wipe"), "a blacklisted player in your group is pointed out, with the reason")
+Group("Ragequit", "Healer", "Third")
+Check(Lines(L1, "BLACKLISTED", "Ragequit") == 1, "only once while they stay in the group")
+Fire(L1, "PARTY_INVITE_REQUEST", "Ragequit")
+Check(Said(L1, "BLACKLISTED", "Ragequit", "invited you"), "an invite from them is pointed out")
+L1.log = {}
+Fire(L1, "CHAT_MSG_CHANNEL", "LFM deadmines", "Ragequit-Forever", "", "4. LookingForGroup", "", "", 0, 4, "LookingForGroup")
+Check(Said(L1, "BLACKLISTED", "Ragequit", "LookingForGroup"), "talking in LookingForGroup is pointed out")
+Fire(L1, "CHAT_MSG_WHISPER", "inv?", "Ragequit-Forever")
+Check(Lines(L1, "BLACKLISTED") == 1, "chat is pointed out at most every ten minutes")
+L1.ns.SetSetting("blackWarn", false) L1.log = {}
+Fire(L1, "PARTY_INVITE_REQUEST", "Ragequit") Run(40)
+Fire(L1, "PARTY_INVITE_REQUEST", "Ragequit")
+Check(not Said(L1, "BLACKLISTED"), "the warning can be turned off")
+L1.ns.SetSetting("blackWarn", true)
+
+-- Someone leaving your dungeon group.
+local function Leaver(name)
+  for _, pop in ipairs(popups) do
+    if pop.which == "BHGKOS_BLACK_LEAVER" and pop.data.info.name == name then return pop end
+  end
+end
+Group()
+inDungeon = true
+Group("Tank", "Healer", "Dpsone", "Dpstwo")
+Group("Tank", "Healer", "Dpsone")
+Fire(L1, "CHAT_MSG_SYSTEM", "Dpstwo leaves the party.")
+Run(3)
+Check(not Leaver("Dpstwo"), "not asked straight away")
+Run(10)
+local pop = Leaver("Dpstwo")
+Check(pop and #popups == 1, "asked once whether to blacklist someone who left the dungeon group (" .. #popups .. ")")
+Check(pop and pop.data.reason == "Left The Deadmines early", "with a reason filled in (" .. tostring(pop and pop.data.reason) .. ")")
+Check(not L1.ns.GetBlack(BKey("Dpstwo")), "nobody is added without saying yes")
+local dialog = { GetEditBox = function() return { GetText = function() return pop.data.reason end } end }
+env1.StaticPopupDialogs.BHGKOS_BLACK_LEAVER.OnAccept(dialog, pop.data) Run(5)
+Check(L2.ns.GetBlack(BKey("Dpstwo")) and L2.ns.GetBlack(BKey("Dpstwo")).w == "Left The Deadmines early", "saying yes blacklists them for the guild")
+popups = {}
+Group("Tank", "Healer") Run(2) Group("Tank") Run(20)
+Check(#popups == 0, "two leaving together (the end of a run) asks about no one")
+inDungeon = false
+Group("Tank", "Healer", "Dpsone") Group("Tank", "Healer") Run(20)
+Check(#popups == 0, "someone leaving outside a dungeon isn't asked about")
+inDungeon = true
+env1.UnitName = function(u) if u == "player" then return "Black1" end end -- names hidden in the instance
+Group("Hidden1", "Hidden2", "Hidden3")
+Fire(L1, "CHAT_MSG_SYSTEM", "Sneaky leaves the party.") Run(15)
+Check(Leaver("Sneaky") ~= nil, "with names hidden, the game's chat line still says who left")
+Group() Run(1)
+
+-- Who can't go on it.
+popups = {}
+env1.GetNumGuildMembers = function() return 1 end
+env1.GetGuildRosterInfo = function() return "Black2-Forever" end
+Fire(L1, "GUILD_ROSTER_UPDATE")
+L1.log = {}
+Slash(L1, "black Black2 test")
+Check(not L1.ns.GetBlack(BKey("Black2")) and Said(L1, "in our guild"), "a guildmate can't go on it")
+L1.ns.AddBlackWithMessage({ name = "Orcy", realm = "Forever", ally = false })
+Check(not L1.ns.GetBlack(BKey("Orcy")) and Said(L1, "other side"), "an enemy can't go on it")
+Slash(L1, "black") Slash(L1, "black list") Slash(L1, "blacklist") Slash(L1, "check Ragequit") Slash(L1, "status") Slash(L1, "help")
+Check(Said(L1, "Ragequit", "on the guild Blacklist"), "/kos check finds a blacklisted player")
+local win
+for _, f in ipairs(L1.frames) do if f.name == "BHGKillListWindow" then win = f end end
+for _, page in ipairs({ "black", "kos", "seen", "black" }) do L1.ns.ShowPage(page) win.scripts.OnShow(win) end
+Check(win.shown, "the list window shows the Blacklist page")
+Run(10)
+Check(AllSame(), "all three in sync at the end")
+if OLD_DIR then
+  local O = Login("Oldversion", nil, "old")
+  Run(120)
+  L1.ns.AddBlack({ name = "Lateleaver", realm = "Forever" }, "x") Add(L1, "Lateenemy", "y") Run(10)
+  Check(Has(O, "Lateenemy") and AllSame(nil, true), "an older version keeps syncing players next to the Blacklist")
 end
 
 local errs = 0

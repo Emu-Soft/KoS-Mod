@@ -19,6 +19,12 @@ Listed guilds travel the same way as one extra bucket, number 17:
 Versions from before guilds ignore G, Q, E and bucket 17, and their
 16-digest H is unchanged, so mixed versions keep syncing players.
 
+The Blacklist travels the same way as buckets 18 to 21:
+  K~<entry>            a change to the Blacklist
+  W~<4 digests>        sent right after Q: what my Blacklist looks like
+  B~18..21~<digest>    followed by F~<entry>^... messages
+Versions from before the Blacklist ignore K, W, F and buckets 18 to 21.
+
 How a login catches up:
   1. A few seconds after logging in you send H with your 16 digests.
   2. Everyone online compares; for each bucket that differs, after a
@@ -52,11 +58,22 @@ ns.sync = {
 }
 local stats = ns.sync
 local GUILD_BUCKET = ns.BUCKETS + 1
+local BLACK_FIRST = GUILD_BUCKET + 1
+local LAST_BUCKET = GUILD_BUCKET + ns.BLACK_BUCKETS
 
--- My digest for bucket i (the last one is the guild list).
+-- My digest for bucket i: players, then the guild list, then the Blacklist.
 local function Digest(i)
 	if i == GUILD_BUCKET then return ns.GuildDigest() end
+	if i >= BLACK_FIRST then return ns.BlackHashes()[i - GUILD_BUCKET] end
 	return ns.BucketHashes()[i]
+end
+
+-- What bucket i holds: its data message kind, how an entry is written,
+-- and the entries.
+local function BucketContents(i)
+	if i == GUILD_BUCKET then return "E~", ns.SerializeGuild, ns.AllGuildEntries() end
+	if i >= BLACK_FIRST then return "F~", ns.Serialize, ns.BlackInBucket(i - GUILD_BUCKET) end
+	return "D~", ns.Serialize, ns.EntriesInBucket(i)
 end
 
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -164,9 +181,9 @@ function ns.QueueLength() return #sendQueue end
 -- Building messages
 -----------------------------------------------------------------------
 
-local function HashList()
+local function HashList(sums)
 	local out = {}
-	for i, h in ipairs(ns.BucketHashes()) do out[i] = ns.ToB36(h) end
+	for i, h in ipairs(sums) do out[i] = ns.ToB36(h) end
 	return table.concat(out, ",")
 end
 
@@ -180,11 +197,17 @@ function ns.SendGuildUpdate(g)
 	Send("G~" .. ns.SerializeGuild(g))
 end
 
+function ns.SendBlackUpdate(e)
+	if not IsInGuild() then return end
+	Send("K~" .. ns.Serialize(e))
+end
+
 function ns.SendHello()
 	if not IsInGuild() then return false end
 	stats.lastHello = GetTime()
-	Send("H~" .. HashList())
+	Send("H~" .. HashList(ns.BucketHashes()))
 	Send("Q~" .. ns.ToB36(ns.GuildDigest()))
+	Send("W~" .. HashList(ns.BlackHashes()))
 	return true
 end
 
@@ -196,11 +219,9 @@ local function SendBucket(i)
 	lastBucketSent[i] = GetTime()
 	inFlight[i] = digest
 	Send("B~" .. i .. "~" .. ns.ToB36(digest), i)
-	local isGuilds = i == GUILD_BUCKET
-	local kind = isGuilds and "E~" or "D~"
-	local serialize = isGuilds and ns.SerializeGuild or ns.Serialize
+	local kind, serialize, entries = BucketContents(i)
 	local chunk, size = {}, 2
-	for _, e in ipairs(isGuilds and ns.AllGuildEntries() or ns.EntriesInBucket(i)) do
+	for _, e in ipairs(entries) do
 		local s = serialize(e)
 		if size + #s + 1 > MAX_MESSAGE and #chunk > 0 then
 			Send(kind .. table.concat(chunk, "^"), i)
@@ -301,13 +322,29 @@ local function IsMe(sender)
 	return s == me
 end
 
-local function Merge(s, sender, isGuild)
-	local e = (isGuild and ns.DeserializeGuild or ns.Deserialize)(s)
+-- Message kind -> how to read its entries and merge them.
+local READERS = {
+	U = { "Deserialize", "MergeIncoming" }, D = { "Deserialize", "MergeIncoming" },
+	G = { "DeserializeGuild", "MergeIncomingGuild" }, E = { "DeserializeGuild", "MergeIncomingGuild" },
+	K = { "Deserialize", "MergeIncomingBlack" }, F = { "Deserialize", "MergeIncomingBlack" },
+}
+
+local function Merge(s, sender, kind)
+	local reader = READERS[kind]
+	local e = ns[reader[1]](s)
 	if not e then return end
-	if (isGuild and ns.MergeIncomingGuild or ns.MergeIncoming)(e) then
+	if ns[reader[2]](e) then
 		stats.merged = stats.merged + 1
 		ns.lastMergeFrom = sender
 	end
+end
+
+-- "d1,d2,..." -> { numbers }, or nil unless there are exactly n of them.
+local function ReadDigests(body, n)
+	local out = {}
+	for d in body:gmatch("[^,]+") do out[#out + 1] = tonumber(d, 36) end
+	if #out ~= n then return nil end
+	return out
 end
 
 local function OnMessage(text, sender)
@@ -316,13 +353,13 @@ local function OnMessage(text, sender)
 	if not kind then return end
 	stats.peers[sender] = GetTime()
 
-	if kind == "U" or kind == "G" then
-		Merge(body, sender, kind == "G")
+	if kind == "U" or kind == "G" or kind == "K" then
+		Merge(body, sender, kind)
 
-	elseif kind == "D" or kind == "E" then
+	elseif kind == "D" or kind == "E" or kind == "F" then
 		ns.syncQuiet = true
 		for s in (body .. "^"):gmatch("([^%^]*)%^") do
-			if s ~= "" then Merge(s, sender, kind == "E") end
+			if s ~= "" then Merge(s, sender, kind) end
 		end
 		ns.syncQuiet = false
 		TrafficSeen()
@@ -334,7 +371,7 @@ local function OnMessage(text, sender)
 	elseif kind == "B" then
 		local i, digest = body:match("^(%d+)~(%w+)$")
 		i, digest = tonumber(i), digest and tonumber(digest, 36)
-		if i and digest and i >= 1 and i <= GUILD_BUCKET then
+		if i and digest and i >= 1 and i <= LAST_BUCKET then
 			announced[i] = announced[i] or {}
 			announced[i][digest] = true
 			if offers[i] then offers[i][digest] = true end
@@ -347,16 +384,13 @@ local function OnMessage(text, sender)
 			TrafficSeen()
 		end
 
-	elseif kind == "H" then
-		local theirs, n = {}, 0
-		for d in body:gmatch("[^,]+") do
-			n = n + 1
-			theirs[n] = tonumber(d, 36)
-		end
-		if n ~= ns.BUCKETS then return end
-		local mine = ns.BucketHashes()
-		for i = 1, ns.BUCKETS do
-			if theirs[i] ~= mine[i] then Offer(i) end
+	elseif kind == "H" or kind == "W" then
+		local players = kind == "H"
+		local mine = players and ns.BucketHashes() or ns.BlackHashes()
+		local theirs = ReadDigests(body, #mine)
+		if not theirs then return end
+		for i = 1, #mine do
+			if theirs[i] ~= mine[i] then Offer(players and i or (GUILD_BUCKET + i)) end
 		end
 
 	elseif kind == "S" then

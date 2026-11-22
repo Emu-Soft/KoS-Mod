@@ -4,9 +4,9 @@ Builds K-UI: Forever's KoS module from this addon's files.
 
     python3 tools/build_kui.py <out KoS.lua> [<Media/KoS folder>]
 
-Writes one file holding Core, Sync, Detect, Stats, UI and Commands (each
-in its own do ... end block, sharing one namespace) and, when a folder is
-given, copies the sounds into it. K-UI's copy keeps its list in
+Writes one file holding Core, Sync, Detect, Stats, Blacklist, UI and
+Commands (each in its own do ... end block, sharing one namespace) and,
+when a folder is given, copies the sounds into it. K-UI's copy keeps its list in
 KainUIForeverKoSDB, plays its sounds from Kain-UI-Forever/Media/KoS, and
 names its windows KainUIForeverKoS...; everything else is the same code,
 so K-UI users and standalone users share one guild list.
@@ -22,11 +22,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ADDON = ROOT / "BHG-Kill-List"
-FILES = ["Core.lua", "Sync.lua", "Detect.lua", "Stats.lua", "UI.lua", "Commands.lua"]
+FILES = ["Core.lua", "Sync.lua", "Detect.lua", "Stats.lua", "Blacklist.lua", "UI.lua", "Commands.lua"]
 
 HEADER = """\
--- KoS.lua: the BH&G Kill List (kill-on-sight list shared with the guild,
--- nearby enemies, wins and losses) inside K-UI: Forever.
+-- KoS.lua: the BH&G Kill List (kill-on-sight list and Blacklist shared
+-- with the guild, nearby enemies, wins and losses) inside K-UI: Forever.
 --
 -- Built from the standalone addon (Kain-Mercer/KoS-Mod, version {version})
 -- by its tools/build_kui.py. Edit the standalone files and rebuild rather

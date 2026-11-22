@@ -5,7 +5,8 @@ BH&G Kill List: UI.lua
   * the nearby window (enemy players seen in the last minute, listed ones
     on top in red; left-click a row to target, right-click to add or
     remove)
-  * the list window (/kos): search, add, edit reasons, remove, options
+  * the list window (/kos): search, add, edit reasons, remove, options,
+    on three pages: the kill list, the guild Blacklist, Recently Seen
 
 The nearby rows target with a click, which only secure buttons may do.
 Secure buttons can't be shown, hidden, moved or changed in combat, so in
@@ -85,107 +86,115 @@ local function EditBoxOf(dialog)
 	return dialog and ((dialog.GetEditBox and dialog:GetEditBox()) or dialog.editBox)
 end
 
-StaticPopupDialogs[ns.POPUP_PREFIX .. "ADD_NAME"] = {
-	text = "Add a player to the BH&G Kill List.\nName (or Name-Realm):",
-	button1 = ACCEPT or "Accept",
-	button2 = CANCEL or "Cancel",
-	hasEditBox = 1,
-	maxLetters = 60,
-	timeout = 0, whileDead = 1, hideOnEscape = 1, exclusive = 1,
-	OnShow = function(dialog) local eb = EditBoxOf(dialog) if eb then eb:SetText("") eb:SetFocus() end end,
-	OnAccept = function(dialog)
-		local eb = EditBoxOf(dialog)
-		local name, realm = ns.SplitName(eb and eb:GetText() or "")
-		if not name then ns.Print("that isn't a player name.") return end
-		C_Timer.After(0.05, function() ns.AskReason({ name = name, realm = realm }) end)
-	end,
-	EditBoxOnEnterPressed = function(eb)
-		local dialog = eb:GetParent()
-		StaticPopupDialogs[ns.POPUP_PREFIX .. "ADD_NAME"].OnAccept(dialog)
-		dialog:Hide()
-	end,
-	EditBoxOnEscapePressed = function(eb) eb:GetParent():Hide() end,
-}
-
-StaticPopupDialogs[ns.POPUP_PREFIX .. "ADD_GUILD"] = {
-	text = "Put a whole guild on the BH&G Kill List.\nEvery member you come across counts as kill on sight.\nGuild name:",
-	button1 = ACCEPT or "Accept",
-	button2 = CANCEL or "Cancel",
-	hasEditBox = 1,
-	maxLetters = 64,
-	timeout = 0, whileDead = 1, hideOnEscape = 1, exclusive = 1,
-	OnShow = function(dialog)
-		local eb = EditBoxOf(dialog)
-		if eb then eb:SetText(ns.TargetGuild() or "") eb:SetFocus() end
-	end,
-	OnAccept = function(dialog)
-		local eb = EditBoxOf(dialog)
-		local name = ns.CleanGuildName(eb and eb:GetText() or "")
-		if not name then ns.Print("that isn't a guild name.") return end
-		C_Timer.After(0.05, function() ns.AskGuildReason(name) end)
-	end,
-	EditBoxOnEnterPressed = function(eb)
-		local dialog = eb:GetParent()
-		StaticPopupDialogs[ns.POPUP_PREFIX .. "ADD_GUILD"].OnAccept(dialog)
-		dialog:Hide()
-	end,
-	EditBoxOnEscapePressed = function(eb) eb:GetParent():Hide() end,
-}
-
-StaticPopupDialogs[ns.POPUP_PREFIX .. "REASON"] = {
-	text = "Why is %s kill on sight? (optional)",
-	button1 = ACCEPT or "Accept",
-	button2 = CANCEL or "Cancel",
-	hasEditBox = 1,
-	maxLetters = 80,
-	editBoxWidth = 300,
-	timeout = 0, whileDead = 1, hideOnEscape = 1, exclusive = 1,
-	OnShow = function(dialog, data)
-		data = data or dialog.data
+-- A pop-up with a text box. onAccept(text, data) runs on the first button
+-- and on Enter; start(data) gives the box's starting text.
+local function TextPopup(id, def, onAccept, start)
+	def.button1 = def.button1 or ACCEPT or "Accept"
+	def.button2 = def.button2 or CANCEL or "Cancel"
+	def.hasEditBox = 1
+	def.timeout = def.timeout or 0
+	def.whileDead, def.hideOnEscape = 1, 1
+	if def.exclusive == nil then def.exclusive = 1 end
+	def.OnShow = function(dialog, data)
 		local eb = EditBoxOf(dialog)
 		if eb then
-			local e = data and ((data.key and ns.Get(data.key)) or (data.guild and ns.GetGuild(data.guild)))
-			eb:SetText(e and e.w or "")
+			eb:SetText(start and start(data or dialog.data) or "")
 			eb:SetFocus()
 		end
-	end,
-	OnAccept = function(dialog, data)
-		data = data or dialog.data
+	end
+	def.OnAccept = function(dialog, data)
 		local eb = EditBoxOf(dialog)
-		local reason = eb and eb:GetText() or ""
-		if not data then return end
-		if data.guild and data.edit then
-			ns.SetGuildReason(data.guild, reason)
-		elseif data.guild then
-			ns.AddGuildWithMessage(data.guild, reason)
-		elseif data.edit then
-			ns.SetReason(data.key, reason)
-		else
-			ns.AddWithMessage(data.info, reason)
-		end
-	end,
-	EditBoxOnEnterPressed = function(eb)
+		onAccept(eb and eb:GetText() or "", data or dialog.data)
+	end
+	def.EditBoxOnEnterPressed = function(eb)
 		local dialog = eb:GetParent()
-		StaticPopupDialogs[ns.POPUP_PREFIX .. "REASON"].OnAccept(dialog, dialog.data)
+		def.OnAccept(dialog, dialog.data)
 		dialog:Hide()
-	end,
-	EditBoxOnEscapePressed = function(eb) eb:GetParent():Hide() end,
-}
+	end
+	def.EditBoxOnEscapePressed = function(eb) eb:GetParent():Hide() end
+	StaticPopupDialogs[ns.POPUP_PREFIX .. id] = def
+end
 
-StaticPopupDialogs[ns.POPUP_PREFIX .. "REMOVE"] = {
-	text = "Remove %s from the BH&G Kill List?\nThis takes them off everyone's list.",
-	button1 = YES or "Yes",
-	button2 = NO or "No",
-	timeout = 0, whileDead = 1, hideOnEscape = 1, exclusive = 1,
-	OnAccept = function(dialog, data)
-		data = data or dialog.data
-		if data and data.guild then
-			ns.RemoveGuildWithMessage(data.guild)
-		elseif data and data.key then
-			ns.RemoveWithMessage(data.key)
-		end
-	end,
-}
+-- A name typed in a pop-up, then (a moment later, once it's closed) next(info).
+local function AskName(id, text, andThen)
+	TextPopup(id, { text = text, maxLetters = 60 }, function(typed)
+		local name, realm = ns.SplitName(typed)
+		if not name then ns.Print("that isn't a player name.") return end
+		C_Timer.After(0.05, function() andThen({ name = name, realm = realm }) end)
+	end)
+end
+
+AskName("ADD_NAME", "Add a player to the BH&G Kill List.\nName (or Name-Realm):", function(info) ns.AskReason(info) end)
+AskName("BLACK_NAME", "Put a player on the guild Blacklist.\nName (or Name-Realm):", function(info) ns.AskBlackReason(info) end)
+
+TextPopup("ADD_GUILD", {
+	text = "Put a whole guild on the BH&G Kill List.\nEvery member you come across counts as kill on sight.\nGuild name:",
+	maxLetters = 64,
+}, function(typed)
+	local name = ns.CleanGuildName(typed)
+	if not name then ns.Print("that isn't a guild name.") return end
+	C_Timer.After(0.05, function() ns.AskGuildReason(name) end)
+end, function() return ns.TargetGuild() end)
+
+TextPopup("REASON", { text = "Why is %s kill on sight? (optional)", maxLetters = 80, editBoxWidth = 300 }, function(reason, data)
+	if not data then return end
+	if data.guild and data.edit then
+		ns.SetGuildReason(data.guild, reason)
+	elseif data.guild then
+		ns.AddGuildWithMessage(data.guild, reason)
+	elseif data.edit then
+		ns.SetReason(data.key, reason)
+	else
+		ns.AddWithMessage(data.info, reason)
+	end
+end, function(data)
+	local e = data and ((data.key and ns.Get(data.key)) or (data.guild and ns.GetGuild(data.guild)))
+	return e and e.w
+end)
+
+TextPopup("BLACK_REASON", { text = "Why put %s on the guild Blacklist? (optional)", maxLetters = 80, editBoxWidth = 300 }, function(reason, data)
+	if not data then return end
+	if data.edit then
+		ns.SetBlackReason(data.key, reason)
+	else
+		ns.AddBlackWithMessage(data.info, reason)
+	end
+end, function(data)
+	local e = data and data.key and ns.GetBlack(data.key)
+	return e and e.w or (data and data.reason)
+end)
+
+-- Asked when someone leaves your dungeon group. Not exclusive, so it
+-- never closes a box you're typing in, and it goes away by itself.
+TextPopup("BLACK_LEAVER", {
+	text = "%s left your dungeon group (or was removed from it).\nPut them on the guild Blacklist? Reason:",
+	button1 = "Blacklist", button2 = NO or "No",
+	maxLetters = 80, editBoxWidth = 300, timeout = 60, exclusive = false,
+}, function(reason, data)
+	if data then ns.AddBlackWithMessage(data.info, reason) end
+end, function(data) return data and data.reason end)
+
+local function YesNoPopup(id, text, onAccept)
+	StaticPopupDialogs[ns.POPUP_PREFIX .. id] = {
+		text = text,
+		button1 = YES or "Yes",
+		button2 = NO or "No",
+		timeout = 0, whileDead = 1, hideOnEscape = 1, exclusive = 1,
+		OnAccept = function(dialog, data) onAccept(data or dialog.data) end,
+	}
+end
+
+YesNoPopup("REMOVE", "Remove %s from the BH&G Kill List?\nThis takes them off everyone's list.", function(data)
+	if data and data.guild then
+		ns.RemoveGuildWithMessage(data.guild)
+	elseif data and data.key then
+		ns.RemoveWithMessage(data.key)
+	end
+end)
+
+YesNoPopup("BLACK_REMOVE", "Take %s off the guild Blacklist?\nThis takes them off everyone's.", function(data)
+	if data and data.key then ns.RemoveBlackWithMessage(data.key) end
+end)
 
 function ns.AskReason(info)
 	if ns.RefuseAlly(info) then return end
@@ -203,6 +212,34 @@ function ns.AskRemove(key)
 	local e = ns.Get(key)
 	if not e then return end
 	StaticPopup_Show(ns.POPUP_PREFIX .. "REMOVE", ns.ColorName(e), nil, { key = key })
+end
+
+function ns.AskBlackEdit(key)
+	local e = ns.GetBlack(key)
+	if not e then return end
+	StaticPopup_Show(ns.POPUP_PREFIX .. "BLACK_REASON", ns.ColorName(e), nil, { key = key, edit = true })
+end
+
+-- info: a player to add, or one already on the Blacklist (edit their reason).
+function ns.AskBlackReason(info)
+	local key = ns.Key(info.name, info.realm)
+	if ns.GetBlack(key) then return ns.AskBlackEdit(key) end
+	if ns.RefuseBlack(info) then return end
+	StaticPopup_Show(ns.POPUP_PREFIX .. "BLACK_REASON", NameColor(info.class, ns.ProperName(info.name)), nil, { info = info })
+end
+
+function ns.AskBlackLeaver(info, reason)
+	StaticPopup_Show(ns.POPUP_PREFIX .. "BLACK_LEAVER", NameColor(info.class, ns.ProperName(info.name)), nil, { info = info, reason = reason })
+end
+
+function ns.AskBlackRemove(key)
+	local e = ns.GetBlack(key)
+	if not e then return end
+	StaticPopup_Show(ns.POPUP_PREFIX .. "BLACK_REMOVE", ns.ColorName(e), nil, { key = key })
+end
+
+function ns.AskBlackName()
+	StaticPopup_Show(ns.POPUP_PREFIX .. "BLACK_NAME")
 end
 
 local function GuildText(name)
@@ -263,10 +300,13 @@ banner:SetScript("OnUpdate", function(self, elapsed)
 	self:SetAlpha(math.min(1, self.left / 1.0))
 end)
 
-function ns.ShowBanner(e, level)
+-- title and how: for a warning that isn't "kill on sight" (the Blacklist's).
+function ns.ShowBanner(e, level, title, how)
 	local levelText = (level and level > 0) and ("  |cffcccccc" .. level .. "|r") or ""
 	local guild = e.g and ("  |cff999999<" .. e.g .. ">|r") or ""
-	banner.name:SetText(ns.ColorName(e) .. levelText .. guild)
+	banner.title:SetText(title or "KILL ON SIGHT")
+	if title then banner.title:SetTextColor(1, 0.6, 0.1) else banner.title:SetTextColor(1, 0.15, 0.15) end
+	banner.name:SetText(ns.ColorName(e) .. (how and ("  |cffcccccc" .. how .. "|r") or "") .. levelText .. guild)
 	local why = e.w or "No reason given"
 	banner.why:SetText(why .. "  |cff999999- added by " .. ns.ShortSender(e.b) .. "|r")
 	banner.left = BANNER_TIME
@@ -278,6 +318,8 @@ function ns.ToggleBannerMove()
 	banner.unlocked = not banner.unlocked
 	banner:EnableMouse(banner.unlocked)
 	if banner.unlocked then
+		banner.title:SetText("KILL ON SIGHT")
+		banner.title:SetTextColor(1, 0.15, 0.15)
 		banner.name:SetText("Drag me where you want the warning")
 		banner.why:SetText("Type /kos move again when you're done")
 		banner:Show()
@@ -524,7 +566,7 @@ end
 
 local LIST_ROWS = 10
 local LROW_H = 36
-local WIN_W, WIN_H = 520, 20 + 34 + LIST_ROWS * LROW_H + 40
+local WIN_W, WIN_H = 640, 20 + 34 + LIST_ROWS * LROW_H + 40
 
 local win = CreateFrame("Frame", ns.FRAME_PREFIX .. "Window", UIParent, BACKDROP_TEMPLATE)
 win:SetSize(WIN_W, WIN_H)
@@ -542,8 +584,9 @@ tinsert(UISpecialFrames, ns.FRAME_PREFIX .. "Window")
 win.title = Text(win, "GameFontNormal")
 win.title:SetPoint("TOPLEFT", 10, -8)
 
--- Two pages: the guild's kill list, and everyone you've seen (with your
--- wins and losses against them).
+-- Three pages: the guild's kill list ("kos"), the guild Blacklist
+-- ("black"), and everyone you've seen ("seen", with your wins and losses
+-- against them).
 local mode = "kos"
 
 local close = CreateFrame("Button", nil, win, "UIPanelCloseButton")
@@ -567,12 +610,19 @@ end
 
 local addTarget = Button("Add target", 90, function()
 	local info = ns.TargetInfo()
+	if mode == "black" then
+		if not info then ns.Print("target a player first.") return end
+		ns.AskBlackReason(info)
+		return
+	end
 	if not info then ns.Print("target an enemy player first.") return end
 	if ns.GetByName(info.name, info.realm) then ns.AskEditReason(ns.Key(info.name, info.realm)) return end
 	ns.AskReason(info)
 end)
 addTarget:SetPoint("LEFT", search, "RIGHT", 10, 0)
-local addName = Button("Add by name", 96, function() ns.AskAddName() end)
+local addName = Button("Add by name", 96, function()
+	if mode == "black" then ns.AskBlackName() else ns.AskAddName() end
+end)
 addName:SetPoint("LEFT", addTarget, "RIGHT", 4, 0)
 local addGuild = Button("Add guild", 84, function() ns.AskAddGuild() end)
 addGuild:SetPoint("LEFT", addName, "RIGHT", 4, 0)
@@ -589,8 +639,17 @@ optionsBtn:SetPoint("LEFT", addGuild, "RIGHT", 4, 0)
 local RefreshList
 local tabSeen = Button("Recently Seen", 110, function() ns.ShowPage("seen") end)
 tabSeen:SetPoint("TOPRIGHT", -28, -5)
+local tabBlack = Button("Blacklist", 80, function() ns.ShowPage("black") end)
+tabBlack:SetPoint("RIGHT", tabSeen, "LEFT", -4, 0)
+tabBlack:SetScript("OnEnter", function(self)
+	GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+	GameTooltip:AddLine("Guild Blacklist")
+	GameTooltip:AddLine("Players on our side to keep out of your groups, shared with the guild. You're warned when one is in your group, invites you or talks in chat.", 1, 1, 1, true)
+	GameTooltip:Show()
+end)
+tabBlack:SetScript("OnLeave", function() GameTooltip:Hide() end)
 local tabKos = Button("Kill List", 80, function() ns.ShowPage("kos") end)
-tabKos:SetPoint("RIGHT", tabSeen, "LEFT", -4, 0)
+tabKos:SetPoint("RIGHT", tabBlack, "LEFT", -4, 0)
 
 local listArea = CreateFrame("Frame", nil, win)
 listArea:SetPoint("TOPLEFT", 6, -56)
@@ -652,6 +711,7 @@ for i = 1, LIST_ROWS do
 	row.edit:SetScript("OnClick", function()
 		if row.guild then ns.AskGuildReason(row.guild) return end
 		if not row.key then return end
+		if row.black then ns.AskBlackEdit(row.key) return end
 		if ns.Get(row.key) then ns.AskEditReason(row.key) return end
 		local rec = ns.Enemy(row.key)
 		if rec then ns.AskReason({ name = rec.n, realm = rec.r, class = rec.c, guild = rec.g, level = rec.lv }) end
@@ -661,7 +721,13 @@ for i = 1, LIST_ROWS do
 	row.remove:SetPoint("RIGHT", -2, 0)
 	row.remove:SetText("Remove")
 	row.remove:SetScript("OnClick", function()
-		if row.guild then ns.AskRemoveGuild(row.guild) elseif row.key then ns.AskRemove(row.key) end
+		if row.guild then
+			ns.AskRemoveGuild(row.guild)
+		elseif row.black then
+			ns.AskBlackRemove(row.key)
+		elseif row.key then
+			ns.AskRemove(row.key)
+		end
 	end)
 	row:SetScript("OnEnter", function(self)
 		if self.guild then
@@ -676,6 +742,19 @@ for i = 1, LIST_ROWS do
 			return
 		end
 		if not self.key then return end
+		if self.black then
+			local b = ns.GetBlack(self.key)
+			if not b then return end
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:AddLine(ns.ColorName(b) .. "  |cffff9900guild Blacklist|r")
+			if b.g then GameTooltip:AddLine("<" .. b.g .. ">", 0.7, 0.7, 0.7) end
+			GameTooltip:AddLine(b.w or "No reason given", 1, 0.8, 0.5, true)
+			GameTooltip:AddLine("Added by " .. ns.ShortSender(b.b) .. ", " .. ns.Ago(b.a), 0.6, 0.6, 0.6)
+			if b.gs then GameTooltip:AddLine("Last in your group " .. ns.Ago(b.gs), 0.6, 0.6, 0.6) end
+			GameTooltip:AddLine("You're warned when they're in your group, invite you or talk in chat.", 1, 1, 1, true)
+			GameTooltip:Show()
+			return
+		end
 		local e = ns.Get(self.key)
 		if mode == "seen" then
 			local rec = ns.Enemy(self.key)
@@ -731,7 +810,7 @@ local function MembersSeen(g)
 end
 
 local function FillGuildRow(row, g)
-	row.key, row.guild = nil, g.n
+	row.key, row.guild, row.black = nil, g.n, nil
 	row.name:SetText("|cffffd200<" .. g.n .. ">|r  |cffaaaaaawhole guild|r")
 	row.why:SetText(g.w or "|cff777777No reason given|r")
 	row.why:SetTextColor(1, 0.75, 0.75)
@@ -745,7 +824,7 @@ end
 
 local function FillKosRow(row, e)
 	if e.isGuildRow then FillGuildRow(row, e.g) return end
-	row.guild = nil
+	row.guild, row.black = nil, nil
 	row.key = ns.Key(e.n, e.r)
 	local level = e.lv and e.lv > 0 and ("  |cffaaaaaa" .. e.lv .. "|r") or ""
 	local guild = e.g and ("  |cff888888<" .. e.g .. ">|r") or ""
@@ -763,7 +842,7 @@ end
 
 local function FillSeenRow(row, item)
 	local rec = item.rec
-	row.key, row.guild = item.key, nil
+	row.key, row.guild, row.black = item.key, nil, nil
 	local level = rec.lv and rec.lv > 0 and ("  |cffaaaaaa" .. rec.lv .. "|r") or ""
 	local guild = rec.g and ("  |cff888888<" .. rec.g .. ">|r") or ""
 	row.name:SetText(ns.ColorName({ n = rec.n, r = rec.r, c = rec.c }) .. level .. guild)
@@ -776,6 +855,19 @@ local function FillSeenRow(row, item)
 	row.edit:SetText(listed and "Edit" or "KoS")
 	row.edit:Show()
 	row.remove:SetShown(listed)
+end
+
+local function FillBlackRow(row, e)
+	row.key, row.guild, row.black = ns.Key(e.n, e.r), nil, true
+	local guild = e.g and ("  |cff888888<" .. e.g .. ">|r") or ""
+	row.name:SetText(ns.ColorName(e) .. guild)
+	row.why:SetText(e.w or "|cff777777No reason given|r")
+	row.why:SetTextColor(1, 0.8, 0.5)
+	row.by:SetText("by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a))
+	row.seen:SetText(e.gs and ("in your group " .. ns.Ago(e.gs)) or "")
+	row.edit:SetText("Edit")
+	row.edit:Show()
+	row.remove:Show()
 end
 
 -- A small, dim version number after the title, e.g. "v1.3.0".
@@ -795,6 +887,10 @@ RefreshList = function()
 			local r = item.rec
 			if Matches({ r.n, r.r, r.g, r.c, r.race, r.zone }, q) then filtered[#filtered + 1] = item end
 		end
+	elseif mode == "black" then
+		for _, e in ipairs(ns.BlackList()) do
+			if Matches({ e.n, e.r, e.g, e.w, e.b, e.c }, q) then filtered[#filtered + 1] = e end
+		end
 	else
 		for _, g in ipairs(ns.GuildList()) do
 			if Matches({ g.n, g.w, g.b }, q) then filtered[#filtered + 1] = { isGuildRow = true, g = g } end
@@ -807,17 +903,28 @@ RefreshList = function()
 	for i, row in ipairs(lrows) do
 		local item = filtered[offset + i]
 		if item then
-			if mode == "seen" then FillSeenRow(row, item) else FillKosRow(row, item) end
+			if mode == "seen" then
+				FillSeenRow(row, item)
+			elseif mode == "black" then
+				FillBlackRow(row, item)
+			else
+				FillKosRow(row, item)
+			end
 			row:Show()
 		else
-			row.key, row.guild = nil, nil
+			row.key, row.guild, row.black = nil, nil, nil
 			row:Hide()
 		end
 	end
 	tabKos:SetEnabled(mode ~= "kos")
 	tabSeen:SetEnabled(mode ~= "seen")
+	tabBlack:SetEnabled(mode ~= "black")
+	addGuild:SetShown(mode ~= "black")
 	local total
-	if mode == "seen" then
+	if mode == "black" then
+		total = ns.BlackCount()
+		win.title:SetText("|cffff9900Guild Blacklist|r  |cffaaaaaa" .. total .. " player" .. (total == 1 and "" or "s") .. "|r" .. VersionTag())
+	elseif mode == "seen" then
 		local w, l, n = ns.Totals()
 		total = n
 		win.title:SetText("|cffe03c3cRecently Seen|r  |cffaaaaaa" .. n .. " enemies|r  " .. ns.Score({ w = w, l = l }) .. VersionTag())
@@ -829,6 +936,7 @@ RefreshList = function()
 	end
 	if total == 0 then
 		emptyText:SetText(mode == "seen" and "No enemy players seen yet. Everyone you come across is kept here, with your wins and losses against them."
+			or mode == "black" and "Nobody on the guild Blacklist yet.\nIt's for players on our side to keep out of groups. Right-click a player or their name in chat, or target them and click Add target. When someone leaves your dungeon group you're asked too."
 			or "Nobody on the list yet.\nTarget an enemy and click Add target, or right-click a player's name.\nAdd guild puts a whole guild on the list.")
 	elseif #filtered == 0 then
 		emptyText:SetText("No one matches \"" .. q .. "\".")
@@ -839,6 +947,10 @@ RefreshList = function()
 	local range = (#filtered > LIST_ROWS) and (first .. "-" .. last .. " of " .. #filtered .. ", scroll for more.  ") or ""
 	if mode == "seen" then
 		status:SetText(range .. "Kept on this PC. Wins and losses are worked out from what the game shows addons.")
+		return
+	end
+	if mode == "black" then
+		status:SetText(range .. (IsInGuild() and "Shared with the guild. You're warned when one of them is in your group, invites you or talks in chat." or "Not in a guild: nothing is shared"))
 		return
 	end
 	local peers = 0
@@ -892,13 +1004,17 @@ local OPTIONS = {
 	{ "hideInDungeons", "Hide the nearby window in dungeons and raids" },
 	{ "nearbyAll", "List every enemy player nearby, not only listed ones" },
 	{ "farPlates", "Show nameplates as far away as the game allows (spots enemies sooner)" },
+	{ "blackWarn", "Warn me when someone on the guild Blacklist is in my group or invites me" },
+	{ "blackChat", "Point out guild Blacklist players who whisper me or talk in chat channels" },
+	{ "leavePrompt", "Offer to blacklist someone who leaves my dungeon group" },
 }
+local OPTION_H = 22
 
 local checks = {}
 for i, o in ipairs(OPTIONS) do
 	local cb = CreateFrame("CheckButton", nil, opts)
 	cb:SetSize(24, 24)
-	cb:SetPoint("TOPLEFT", 14, -10 - (i - 1) * 26)
+	cb:SetPoint("TOPLEFT", 14, -8 - (i - 1) * OPTION_H)
 	cb:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
 	cb:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
 	cb:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
@@ -920,7 +1036,7 @@ end
 
 local testBtn = CreateFrame("Button", nil, opts, "UIPanelButtonTemplate")
 testBtn:SetSize(120, 22)
-testBtn:SetPoint("TOPLEFT", 16, -10 - #OPTIONS * 26 - 10)
+testBtn:SetPoint("TOPLEFT", 16, -8 - #OPTIONS * OPTION_H - 8)
 testBtn:SetText("Test warning")
 testBtn:SetScript("OnClick", function() ns.TestAlert() end)
 
@@ -944,10 +1060,10 @@ end)
 platesBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 local optsNote = Text(opts, "GameFontDisableSmall")
-optsNote:SetPoint("TOPLEFT", testBtn, "BOTTOMLEFT", 0, -14)
-optsNote:SetWidth(460)
+optsNote:SetPoint("TOPLEFT", testBtn, "BOTTOMLEFT", 0, -10)
+optsNote:SetWidth(WIN_W - 60)
 optsNote:SetWordWrap(true)
-optsNote:SetText("Drag the nearby window by its edge to move it. Everything on the list is shared with every guild member who has BH&G Kill List; changes reach everyone online right away, and anyone offline catches up when they log in.")
+optsNote:SetText("Drag the nearby window by its edge to move it. The kill list and the Blacklist are shared with every guild member who has the addon; anyone offline catches up when they log in.")
 
 function ns.ToggleOptions()
 	local show = not opts:IsShown()

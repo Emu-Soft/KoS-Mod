@@ -10,7 +10,15 @@ the list too (db.guilds, keyed by the guild's name in lower case): any
 enemy player whose guild is listed counts as kill on sight. The game
 never tells an addon who is in an enemy guild, so a member is only
 recognised once you see them (nameplate, target, mouseover) and the
-game shows their guild. Removing a player keeps
+game shows their guild.
+
+The guild Blacklist (db.black, keyed like the kill list) is a separate
+list of players on our own side to keep out of groups: people who
+leave dungeons early and the like. Its entries look exactly like kill
+list entries and follow the same merge rule, but it never touches the
+kill list: a player can be on one, the other, or both.
+
+Removing a player keeps
 a small "removed" marker instead of deleting the entry, so the removal
 spreads to guildmates who were offline at the time instead of the player
 coming back from their copy.
@@ -238,6 +246,9 @@ ns.DEFAULTS = {
 	nearbyAll = true,      -- list every enemy player nearby, not only listed ones
 	nearbyTime = 60,       -- seconds an enemy stays in the nearby window
 	alertCooldown = 60,    -- seconds before the same player warns again
+	blackWarn = true,      -- warn when a Blacklist player is in your group or invites you
+	blackChat = true,      -- point out Blacklist players who whisper you or talk in chat channels
+	leavePrompt = true,    -- offer to blacklist someone who leaves your dungeon group
 }
 
 function ns.InitDB()
@@ -246,6 +257,7 @@ function ns.InitDB()
 	ns.loadedWithData = type(db.entries) == "table" and next(db.entries) ~= nil
 	if type(db.entries) ~= "table" then db.entries = {} end
 	if type(db.guilds) ~= "table" then db.guilds = {} end
+	if type(db.black) ~= "table" then db.black = {} end
 	if type(db.settings) ~= "table" then db.settings = {} end
 	if type(db.pos) ~= "table" then db.pos = {} end
 	for k, v in pairs(ns.DEFAULTS) do
@@ -254,9 +266,11 @@ function ns.InitDB()
 	db.schema = 1
 	ns.db = db
 	-- Drop anything that doesn't look like an entry (hand edits, old data).
-	for key, e in pairs(db.entries) do
-		if type(e) ~= "table" or type(e.n) ~= "string" or type(e.t) ~= "number" then
-			db.entries[key] = nil
+	for _, list in ipairs({ db.entries, db.black }) do
+		for key, e in pairs(list) do
+			if type(e) ~= "table" or type(e.n) ~= "string" or type(e.t) ~= "number" then
+				list[key] = nil
+			end
 		end
 	end
 	for key, g in pairs(db.guilds) do
@@ -306,6 +320,7 @@ end
 -- else on an entry (level, race, last seen...) stays on this PC.
 --
 -- A listed guild shares n guild name, w, b, a, t, x and y the same way.
+-- A Blacklist entry has the same fields as a kill list entry.
 -----------------------------------------------------------------------
 
 local SHARED = { "n", "r", "c", "g", "w", "b", "a", "t", "x", "y" }
@@ -403,6 +418,7 @@ end
 -----------------------------------------------------------------------
 
 ns.BUCKETS = 16
+ns.BLACK_BUCKETS = 4 -- the Blacklist has buckets of its own (see Sync.lua)
 
 local function Hash(s)
 	local h = 5381
@@ -413,13 +429,13 @@ local function Hash(s)
 end
 ns.Hash = Hash
 
-function ns.BucketOf(key)
-	return (Hash(key) % ns.BUCKETS) + 1
+function ns.BucketOf(key, buckets)
+	return (Hash(key) % (buckets or ns.BUCKETS)) + 1
 end
 
-local hashCache, guildDigest
+local hashCache, blackCache, guildDigest
 function ns.InvalidateHashes()
-	hashCache, guildDigest = nil, nil
+	hashCache, blackCache, guildDigest = nil, nil, nil
 end
 
 -- The listed guilds are few, so they share one digest of their own,
@@ -442,59 +458,88 @@ function ns.AllGuildEntries()
 	return list
 end
 
-function ns.BucketHashes()
-	if hashCache then return hashCache end
+local function Sums(entries, buckets)
 	local sums = {}
-	for i = 1, ns.BUCKETS do sums[i] = 0 end
-	for key, e in pairs(ns.db.entries) do
-		local b = ns.BucketOf(key)
+	for i = 1, buckets do sums[i] = 0 end
+	for key, e in pairs(entries) do
+		local b = ns.BucketOf(key, buckets)
 		sums[b] = (sums[b] + Hash(key .. "=" .. ns.Serialize(e))) % 4294967296
 	end
-	hashCache = sums
 	return sums
 end
 
-function ns.EntriesInBucket(i)
+local function InBucket(entries, buckets, i)
 	local list = {}
-	for key, e in pairs(ns.db.entries) do
-		if ns.BucketOf(key) == i then list[#list + 1] = e end
+	for key, e in pairs(entries) do
+		if ns.BucketOf(key, buckets) == i then list[#list + 1] = e end
 	end
 	table.sort(list, function(a, b) return ns.Key(a.n, a.r) < ns.Key(b.n, b.r) end)
 	return list
 end
 
+function ns.BucketHashes()
+	hashCache = hashCache or Sums(ns.db.entries, ns.BUCKETS)
+	return hashCache
+end
+
+function ns.BlackHashes()
+	blackCache = blackCache or Sums(ns.db.black, ns.BLACK_BUCKETS)
+	return blackCache
+end
+
+function ns.EntriesInBucket(i)
+	return InBucket(ns.db.entries, ns.BUCKETS, i)
+end
+
+function ns.BlackInBucket(i)
+	return InBucket(ns.db.black, ns.BLACK_BUCKETS, i)
+end
+
 -----------------------------------------------------------------------
--- The list
+-- The list (and the Blacklist, which works the same way)
 -----------------------------------------------------------------------
 
--- The entry for key while it's on the list (not removed), else nil.
-function ns.Get(key)
-	local e = key and ns.db and ns.db.entries[key]
+-- The two player lists. Each names its table in the saved data, what
+-- sends a change to the guild, and the events a guildmate's change fires.
+local KILL = { field = "entries", send = "SendUpdate", added = "ADDED_BY_GUILD", removed = "REMOVED_BY_GUILD" }
+local BLACK = { field = "black", send = "SendBlackUpdate", added = "BLACK_ADDED_BY_GUILD", removed = "BLACK_REMOVED_BY_GUILD" }
+
+local function GetIn(list, key)
+	local e = key and ns.db and ns.db[list.field][key]
 	if e and not e.x then return e end
 	return nil
 end
+
+-- Every listed (not removed) entry, sorted by name.
+local function ListOf(list)
+	local out = {}
+	for _, e in pairs(ns.db[list.field]) do
+		if not e.x then out[#out + 1] = e end
+	end
+	table.sort(out, function(a, b) return ns.DisplayName(a):lower() < ns.DisplayName(b):lower() end)
+	return out
+end
+
+-- The entry for key while it's on the list (not removed), else nil.
+function ns.Get(key) return GetIn(KILL, key) end
+function ns.GetBlack(key) return GetIn(BLACK, key) end
 
 function ns.GetByName(name, realm)
 	return ns.Get(ns.Key(name, realm))
 end
 
-function ns.Count()
+function ns.List() return ListOf(KILL) end
+function ns.BlackList() return ListOf(BLACK) end
+local function CountIn(list)
 	local n = 0
-	for _, e in pairs(ns.db.entries) do
+	for _, e in pairs(ns.db[list.field]) do
 		if not e.x then n = n + 1 end
 	end
 	return n
 end
 
--- Every listed (not removed) entry, sorted by name.
-function ns.List()
-	local list = {}
-	for _, e in pairs(ns.db.entries) do
-		if not e.x then list[#list + 1] = e end
-	end
-	table.sort(list, function(a, b) return ns.DisplayName(a):lower() < ns.DisplayName(b):lower() end)
-	return list
-end
+function ns.Count() return CountIn(KILL) end
+function ns.BlackCount() return CountIn(BLACK) end
 
 -- A new change stamp: now, but always after the entry's last one.
 local function Stamp(old)
@@ -503,18 +548,18 @@ local function Stamp(old)
 	return t
 end
 
-local function Commit(key, e, fromSync)
-	local old = ns.db.entries[key]
+local function Commit(list, key, e, fromSync)
+	local old = ns.db[list.field][key]
 	-- Keep what this PC knows that isn't shared (level, last seen...).
 	if old then
 		for k, v in pairs(old) do
 			if e[k] == nil and not ns.IsSharedField(k) then e[k] = v end
 		end
 	end
-	ns.db.entries[key] = e
+	ns.db[list.field][key] = e
 	ns.InvalidateHashes()
 	ns.Fire("LIST_CHANGED", key, e, fromSync)
-	if not fromSync and ns.SendUpdate then ns.SendUpdate(e) end
+	if not fromSync and ns[list.send] then ns[list.send](e) end
 end
 
 local sharedSet = {}
@@ -537,11 +582,11 @@ end
 
 -- Adds or updates a player. info: { name, realm, class, guild, level, race }.
 -- Returns the entry and whether it was newly added.
-function ns.Add(info, reason)
+local function AddTo(list, info, reason)
 	local name, realm = info.name, info.realm or ns.MyRealm()
 	if type(name) ~= "string" or name == "" then return nil end
 	local key = ns.Key(name, realm)
-	local old = ns.db.entries[key]
+	local old = ns.db[list.field][key]
 	local e = old and CopyShared(old) or {}
 	local wasListed = old and not old.x
 	e.n = ns.Clean(name, LIMITS.n)
@@ -561,30 +606,55 @@ function ns.Add(info, reason)
 	end
 	local localInfo = { lv = info.level, race = info.race }
 	for k, v in pairs(localInfo) do e[k] = v end
-	Commit(key, e)
+	Commit(list, key, e)
 	return e, not wasListed
 end
 
-function ns.SetReason(key, reason)
-	local old = ns.Get(key)
+local function SetReasonIn(list, key, reason)
+	local old = GetIn(list, key)
 	if not old then return end
 	local e = CopyShared(old)
 	e.w = ns.Clean(reason, LIMITS.w)
 	if e.w == old.w then return end
 	e.t = Stamp(old)
-	Commit(key, e)
+	Commit(list, key, e)
 end
 
-function ns.Remove(key)
-	local old = ns.Get(key)
+local function RemoveFrom(list, key)
+	local old = GetIn(list, key)
 	if not old then return nil end
 	local e = CopyShared(old)
 	e.x = true
 	e.y = ns.Clean(ns.MyFullName(), LIMITS.y)
 	e.t = Stamp(old)
-	Commit(key, e)
+	Commit(list, key, e)
 	return e
 end
+
+-- An entry that came from a guildmate. Returns true when it changed ours.
+local function MergeInto(list, e)
+	local key = ns.Key(e.n, e.r)
+	local old = ns.db[list.field][key]
+	if old and not ns.IsNewer(e, old) then return false end
+	local wasListed = old and not old.x
+	Commit(list, key, e, true)
+	if not e.x and not wasListed then
+		ns.Fire(list.added, key, e)
+	elseif e.x and wasListed then
+		ns.Fire(list.removed, key, e)
+	end
+	return true
+end
+
+function ns.Add(info, reason) return AddTo(KILL, info, reason) end
+function ns.SetReason(key, reason) return SetReasonIn(KILL, key, reason) end
+function ns.Remove(key) return RemoveFrom(KILL, key) end
+function ns.MergeIncoming(e) return MergeInto(KILL, e) end
+
+function ns.AddBlack(info, reason) return AddTo(BLACK, info, reason) end
+function ns.SetBlackReason(key, reason) return SetReasonIn(BLACK, key, reason) end
+function ns.RemoveBlack(key) return RemoveFrom(BLACK, key) end
+function ns.MergeIncomingBlack(e) return MergeInto(BLACK, e) end
 
 -- Fill in the class or guild of a listed player once we see them, so a
 -- name typed by hand gets its class colour for everyone.
@@ -599,22 +669,7 @@ function ns.LearnDetails(key, class, guild)
 	if needClass then e.c = class end
 	if needGuild then e.g = guild end
 	e.t = Stamp(old)
-	Commit(key, e)
-end
-
--- An entry that came from a guildmate. Returns true when it changed ours.
-function ns.MergeIncoming(e)
-	local key = ns.Key(e.n, e.r)
-	local old = ns.db.entries[key]
-	if old and not ns.IsNewer(e, old) then return false end
-	local wasListed = old and not old.x
-	Commit(key, e, true)
-	if not e.x and not wasListed then
-		ns.Fire("ADDED_BY_GUILD", key, e)
-	elseif e.x and wasListed then
-		ns.Fire("REMOVED_BY_GUILD", key, e)
-	end
-	return true
+	Commit(KILL, key, e)
 end
 
 -----------------------------------------------------------------------
@@ -819,14 +874,16 @@ function ns.ImportStandalone()
 	local db = ns.db
 	if type(old.entries) == "table" then
 		ns.syncQuiet = true
-		for _, e in pairs(old.entries) do
-			local copy = type(e) == "table" and type(e.n) == "string" and type(e.t) == "number"
-				and ns.Deserialize(ns.Serialize(e))
-			if copy then
-				for k, v in pairs(e) do
-					if copy[k] == nil and not ns.IsSharedField(k) then copy[k] = v end
+		for field, merge in pairs({ entries = ns.MergeIncoming, black = ns.MergeIncomingBlack }) do
+			for _, e in pairs(type(old[field]) == "table" and old[field] or {}) do
+				local copy = type(e) == "table" and type(e.n) == "string" and type(e.t) == "number"
+					and ns.Deserialize(ns.Serialize(e))
+				if copy then
+					for k, v in pairs(e) do
+						if copy[k] == nil and not ns.IsSharedField(k) then copy[k] = v end
+					end
+					merge(copy)
 				end
-				ns.MergeIncoming(copy)
 			end
 		end
 		if type(old.guilds) == "table" then

@@ -2,6 +2,19 @@
 
 Newest first. Each version has up to three sections: New, Changed, Fixed. The release button builds each GitHub release's description from this file.
 
+## Unreleased
+
+### New
+- A guild Blacklist, for players on our own side you'd rather not group with: people who leave dungeons early, ninja loot and so on. It's a list of its own, so nobody on it is treated as an enemy and the kill list stays exactly as it was.
+- To blacklist someone: right-click a group member's portrait or their name in chat and pick "Add to the guild Blacklist", target them and type `/kos black`, use the new **Blacklist** page in `/kos`, or type `/kos black Name a reason`.
+- When someone leaves your dungeon group, a box comes up a few seconds later asking whether to blacklist them, with "Left (dungeon) early" filled in. The game doesn't say why someone left or whether they were removed, so it only ever asks: nobody is added unless you say yes. If two people leave close together, as at the end of a run, it doesn't ask.
+- When someone on the Blacklist is in your group, joins it or invites you, you get an orange BLACKLISTED warning with the sound and their reason. When they whisper you or talk in a channel such as LookingForGroup, you get a line in chat. Their tooltip shows it too.
+- The Blacklist is shared with the guild like the kill list: an add, a new reason or a removal reaches everyone online straight away, and anyone offline catches up when they log in. Anyone can take someone off it for everyone.
+- Enemies can't go on the Blacklist (use the kill list) and neither can guildmates. It works the same whichever side your guild is on.
+- New options: the group and invite warnings, the chat lines, and the question when someone leaves your dungeon group can each be turned off.
+- `/kos check` and `/kos status` include the Blacklist.
+- Guildmates on 1.3.0 or older keep syncing the kill list and guilds with you as before; they just don't get the Blacklist until they update.
+
 ## 1.3.0
 
 ### New

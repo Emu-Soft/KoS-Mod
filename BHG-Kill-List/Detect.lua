@@ -10,8 +10,8 @@ A member of a listed guild sets off the warning too (the banner and
 sound once a minute per guild, so a whole raid of them doesn't drown you
 out) but isn't shared with the guild: everyone recognises them on sight.
 
-Also adds the list to unit tooltips and to the right-click menu on
-players.
+Also adds the list (and the guild Blacklist) to unit tooltips and to
+the right-click menu on players.
 --]]
 
 local _, ns = ...
@@ -49,6 +49,7 @@ local function Call(fn, ...)
 	if not ok then return nil end
 	return Plain(a), Plain(b), Plain(c)
 end
+ns.Call = Call
 
 -- Players this PC has seen on our side this session (key -> true), and
 -- their guilds (guild key -> true).
@@ -71,6 +72,15 @@ local function GuildKeys()
 end
 ns.On("GUILD_ROSTER_UPDATE", function() guildKeysDirty = true end)
 ns.On("PLAYER_GUILD_UPDATE", function() guildKeysDirty = true end)
+
+function ns.IsGuildmate(key)
+	return GuildKeys()[key] or false
+end
+
+-- Read from the unit as the other side (or hostile when the side is unknown).
+function ns.IsEnemy(info)
+	return info.ally == false or (info.ally == nil and info.hostile == true)
+end
 
 -- Is this player on our side? info.ally comes from reading them directly;
 -- otherwise: seen on our side this session, in the guild, or in the group.
@@ -553,6 +563,11 @@ local function OnUnitTooltip(tooltip)
 		tooltip:AddLine("Kill on sight: the whole guild <" .. g.n .. ">" .. (g.w and (": " .. g.w) or ""), 1, 0.15, 0.15, true)
 		tooltip:AddLine("BH&G Kill List, added by " .. ns.ShortSender(g.b), 0.6, 0.6, 0.6)
 	end
+	local black = not ns.IsEnemy(info) and ns.GetBlack(key)
+	if black then
+		tooltip:AddLine("On the guild Blacklist: " .. (black.w or "no reason given"), 1, 0.6, 0.1, true)
+		tooltip:AddLine("BH&G Kill List, added by " .. ns.ShortSender(black.b), 0.6, 0.6, 0.6)
+	end
 	local rec = ns.Enemy and ns.Enemy(key)
 	if rec and (e or info.hostile) and ((rec.w or 0) + (rec.l or 0)) > 0 then
 		tooltip:AddLine("Your record: " .. ns.Score(rec), 1, 1, 1)
@@ -596,8 +611,18 @@ local function AddMenuButton(_, rootDescription, contextData)
 	local info = MenuTarget(contextData)
 	if not info then return end
 	local key = ns.Key(info.name, info.realm)
-	if not ns.Get(key) and ns.IsAlly(info) then return end
+	local killButtons = ns.Get(key) or not ns.IsAlly(info)
+	local blackButton = ns.CanBlacklist(info)
+	if not killButtons and not blackButton then return end
 	rootDescription:CreateDivider()
+	if blackButton then
+		if ns.GetBlack(key) then
+			rootDescription:CreateButton("|cffff9900Remove from the guild Blacklist|r", function() ns.AskBlackRemove(key) end)
+		else
+			rootDescription:CreateButton("|cffff9900Add to the guild Blacklist|r", function() ns.AskBlackReason(info) end)
+		end
+	end
+	if not killButtons then return end
 	if ns.Get(key) then
 		rootDescription:CreateButton("|cffe03c3cRemove from BH&G Kill List|r", function()
 			ns.RemoveWithMessage(key)
