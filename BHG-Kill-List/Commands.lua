@@ -43,7 +43,7 @@ end
 
 local function Status()
 	local say = ns.Print
-	say((ns.embedded and "K-UI's kill list" or "standalone addon") .. (ns.embedded and "" or (" version " .. ns.VERSION))
+	say((ns.embedded and "K-UI's kill list" or "standalone addon") .. " version " .. ns.VERSION
 		.. (_G.BHGKillListStandalone and ns.embedded and " (the standalone addon is installed and asleep)" or "") .. ", " .. ns.Count() .. " players and " .. ns.GuildCount() .. " whole guilds on the list (" .. (function()
 		local n = 0
 		for _, e in pairs(ns.db.entries) do if e.x then n = n + 1 end end

@@ -37,6 +37,7 @@ local ADDON_NAME, KUI = ...
 
 local ns = {{
 	embedded = true,
+	VERSION = "{version}", -- the Kill List's version (K-UI's toc has K-UI's own)
 	DB_NAME = "KainUIForeverKoSDB",
 	SOUND_DIR = "Interface\\\\AddOns\\\\Kain-UI-Forever\\\\Media\\\\KoS\\\\",
 	FRAME_PREFIX = "KainUIForeverKoS",

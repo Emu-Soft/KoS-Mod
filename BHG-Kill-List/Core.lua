@@ -45,7 +45,8 @@ ns.POPUP_PREFIX = ns.POPUP_PREFIX or "BHGKOS_"
 ns.active = false -- true once this copy is the one running
 ns.TITLE = "BH&G Kill List"
 ns.PREFIX = "|cffe03c3cBH&G Kill List:|r "
-ns.VERSION = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version"))
+-- The Kill List's own version. K-UI's build sets it (its toc carries K-UI's version, not this one).
+ns.VERSION = ns.VERSION or (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version"))
 	or (GetAddOnMetadata and GetAddOnMetadata(ADDON_NAME, "Version")) or "?"
 
 -----------------------------------------------------------------------

@@ -778,6 +778,13 @@ local function FillSeenRow(row, item)
 	row.remove:SetShown(listed)
 end
 
+-- A small, dim version number after the title, e.g. "v1.3.0".
+local function VersionTag()
+	local v = ns.VERSION
+	if type(v) ~= "string" or v == "" or v == "?" then return "" end
+	return "  |cff666666v" .. v .. "|r"
+end
+
 RefreshList = function()
 	if not win:IsShown() or not ns.db then return end
 	local q = (search:GetText() or ""):lower()
@@ -813,12 +820,12 @@ RefreshList = function()
 	if mode == "seen" then
 		local w, l, n = ns.Totals()
 		total = n
-		win.title:SetText("|cffe03c3cRecently Seen|r  |cffaaaaaa" .. n .. " enemies|r  " .. ns.Score({ w = w, l = l }))
+		win.title:SetText("|cffe03c3cRecently Seen|r  |cffaaaaaa" .. n .. " enemies|r  " .. ns.Score({ w = w, l = l }) .. VersionTag())
 	else
 		local guilds = ns.GuildCount()
 		total = ns.Count() + guilds
 		win.title:SetText("|cffe03c3cBH&G Kill List|r  |cffaaaaaa" .. ns.Count() .. " player" .. (ns.Count() == 1 and "" or "s")
-			.. (guilds > 0 and (", " .. guilds .. " guild" .. (guilds == 1 and "" or "s")) or "") .. "|r")
+			.. (guilds > 0 and (", " .. guilds .. " guild" .. (guilds == 1 and "" or "s")) or "") .. "|r" .. VersionTag())
 	end
 	if total == 0 then
 		emptyText:SetText(mode == "seen" and "No enemy players seen yet. Everyone you come across is kept here, with your wins and losses against them."

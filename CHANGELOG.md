@@ -13,6 +13,7 @@ Newest first. Each version has up to three sections: New, Changed, Fixed. The re
 - Members of a listed guild aren't announced to the guild when you spot them (only players on the list one by one are), so a whole guild passing by doesn't fill everyone's chat.
 - The game doesn't let addons look up who is in an enemy guild, so a member is only recognised once you see them and the game shows their guild. A player who leaves the guild stops counting; anyone who joins counts from the moment you see them.
 - Your own guild, and any guild seen on our side, can't be put on the list. Someone on our side whose guild has the same name as a listed one doesn't set it off.
+- The kill list window shows the addon's version next to the player count, in Kain-UI Forever too, so it's easy to see who needs to update. `/kos status` shows it as well.
 - Guildmates on 1.2.5 or older keep syncing players with you as before; they just don't get the guilds until they update.
 
 ## 1.2.5
