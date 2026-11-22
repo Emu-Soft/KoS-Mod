@@ -2,6 +2,19 @@
 
 Newest first. Each version has up to three sections: New, Changed, Fixed. The release button builds each GitHub release's description from this file.
 
+## Unreleased
+
+### New
+- Whole guilds can go on the kill list. Every member of a listed guild you come across counts as kill on sight: the warning, the red row at the top of Horde Scum Nearby, and "Kill on sight" on their tooltip, with the guild's reason.
+- To add a guild: right-click one of its members (their portrait, or their row in Horde Scum Nearby) and pick "Add the whole guild", target one and type `/kos guild`, click **Add guild** in `/kos`, or type `/kos guild add Guild Name: a reason`.
+- Listed guilds show at the top of the kill list with their reason, who added them and how many of their members you've seen. Edit and Remove work like they do for players. `/kos guilds` lists them in chat.
+- Guilds are shared with the guild like players are: an add, a new reason or a removal reaches everyone online straight away, and anyone offline catches up when they log in.
+- When a group of the same guild shows up, you get the banner and the sound once a minute for that guild, and a line in chat for each member, so a raid of them doesn't drown you out.
+- Members of a listed guild aren't announced to the guild when you spot them (only players on the list one by one are), so a whole guild passing by doesn't fill everyone's chat.
+- The game doesn't let addons look up who is in an enemy guild, so a member is only recognised once you see them and the game shows their guild. A player who leaves the guild stops counting; anyone who joins counts from the moment you see them.
+- Your own guild, and any guild seen on our side, can't be put on the list. Someone on our side whose guild has the same name as a listed one doesn't set it off.
+- Guildmates on 1.2.5 or older keep syncing players with you as before; they just don't get the guilds until they update.
+
 ## 1.2.5
 
 ### New

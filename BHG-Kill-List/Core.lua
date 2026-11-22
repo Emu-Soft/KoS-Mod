@@ -5,7 +5,12 @@ The list itself: saved data, names and keys, adding and removing players,
 and the merge rule every copy of the list follows so that all guild
 members end up with the same list (Sync.lua does the talking).
 
-Each entry is keyed by "name-realm" in lower case. Removing a player keeps
+Each entry is keyed by "name-realm" in lower case. Whole guilds can go on
+the list too (db.guilds, keyed by the guild's name in lower case): any
+enemy player whose guild is listed counts as kill on sight. The game
+never tells an addon who is in an enemy guild, so a member is only
+recognised once you see them (nameplate, target, mouseover) and the
+game shows their guild. Removing a player keeps
 a small "removed" marker instead of deleting the entry, so the removal
 spreads to guildmates who were offline at the time instead of the player
 coming back from their copy.
@@ -239,6 +244,7 @@ function ns.InitDB()
 	local db = _G[ns.DB_NAME]
 	ns.loadedWithData = type(db.entries) == "table" and next(db.entries) ~= nil
 	if type(db.entries) ~= "table" then db.entries = {} end
+	if type(db.guilds) ~= "table" then db.guilds = {} end
 	if type(db.settings) ~= "table" then db.settings = {} end
 	if type(db.pos) ~= "table" then db.pos = {} end
 	for k, v in pairs(ns.DEFAULTS) do
@@ -250,6 +256,11 @@ function ns.InitDB()
 	for key, e in pairs(db.entries) do
 		if type(e) ~= "table" or type(e.n) ~= "string" or type(e.t) ~= "number" then
 			db.entries[key] = nil
+		end
+	end
+	for key, g in pairs(db.guilds) do
+		if type(g) ~= "table" or type(g.n) ~= "string" or type(g.t) ~= "number" then
+			db.guilds[key] = nil
 		end
 	end
 	ns.InvalidateHashes()
@@ -292,9 +303,12 @@ end
 -- w reason, b added by, a added at, t changed at, x removed ("1"),
 -- y removed by. Numbers in base 36 to keep messages short. Everything
 -- else on an entry (level, race, last seen...) stays on this PC.
+--
+-- A listed guild shares n guild name, w, b, a, t, x and y the same way.
 -----------------------------------------------------------------------
 
 local SHARED = { "n", "r", "c", "g", "w", "b", "a", "t", "x", "y" }
+local GUILD_SHARED = { "n", "w", "b", "a", "t", "x", "y" }
 local NUMERIC = { a = true, t = true }
 ns.SHARED_FIELDS = SHARED
 
@@ -311,9 +325,9 @@ local function ToB36(n)
 end
 ns.ToB36 = ToB36
 
-function ns.Serialize(e)
+local function SerializeWith(fields, e)
 	local parts = {}
-	for i, f in ipairs(SHARED) do
+	for i, f in ipairs(fields) do
 		local v = e[f]
 		if NUMERIC[f] then
 			parts[i] = ToB36(v)
@@ -326,19 +340,23 @@ function ns.Serialize(e)
 	return table.concat(parts, "~")
 end
 
-local LIMITS = { n = 48, r = 64, c = 20, g = 64, w = 80, b = 80, y = 80 }
+function ns.Serialize(e) return SerializeWith(SHARED, e) end
+function ns.SerializeGuild(g) return SerializeWith(GUILD_SHARED, g) end
 
--- Returns an entry table or nil when the text isn't a valid entry.
-function ns.Deserialize(s)
+local LIMITS = { n = 48, r = 64, c = 20, g = 64, w = 80, b = 80, y = 80 }
+local GUILD_LIMITS = { n = 64, w = 80, b = 80, y = 80 }
+
+-- An entry table, or nil when the text isn't a valid one.
+local function DeserializeWith(fields, limits, s)
 	if type(s) ~= "string" then return nil end
 	local parts, i = {}, 1
 	for field in (s .. "~"):gmatch("([^~]*)~") do
 		parts[i] = field
 		i = i + 1
 	end
-	if #parts ~= #SHARED then return nil end
+	if #parts ~= #fields then return nil end
 	local e = {}
-	for idx, f in ipairs(SHARED) do
+	for idx, f in ipairs(fields) do
 		local v = parts[idx]
 		if NUMERIC[f] then
 			e[f] = tonumber(v, 36)
@@ -346,23 +364,34 @@ function ns.Deserialize(s)
 		elseif f == "x" then
 			e[f] = (v == "1") or nil
 		elseif v ~= "" then
-			if #v > LIMITS[f] then return nil end
+			if #v > limits[f] then return nil end
 			e[f] = v
 		end
 	end
-	if not e.n or not e.r or e.n:find("[%s~%^|]") then return nil end
+	if not e.n or e.n:find("[~%^|]") then return nil end
 	-- A change stamped more than a day in the future is a broken clock;
 	-- accepting it would make that version impossible to change.
 	if e.t > ns.Now() + 86400 then return nil end
 	return e
 end
 
+function ns.Deserialize(s)
+	local e = DeserializeWith(SHARED, LIMITS, s)
+	if not e or not e.r or e.n:find("%s") then return nil end
+	return e
+end
+
+function ns.DeserializeGuild(s)
+	return DeserializeWith(GUILD_SHARED, GUILD_LIMITS, s)
+end
+
 -- Is a newer than b? Later change wins; a tie is broken the same way on
 -- every PC (by the shared text), so everyone settles on the same version.
-function ns.IsNewer(a, b)
+function ns.IsNewer(a, b, serialize)
 	if not b then return true end
 	if a.t ~= b.t then return a.t > b.t end
-	return ns.Serialize(a) > ns.Serialize(b)
+	serialize = serialize or ns.Serialize
+	return serialize(a) > serialize(b)
 end
 
 -----------------------------------------------------------------------
@@ -387,9 +416,29 @@ function ns.BucketOf(key)
 	return (Hash(key) % ns.BUCKETS) + 1
 end
 
-local hashCache
+local hashCache, guildDigest
 function ns.InvalidateHashes()
-	hashCache = nil
+	hashCache, guildDigest = nil, nil
+end
+
+-- The listed guilds are few, so they share one digest of their own,
+-- sent apart from the player buckets (see Sync.lua).
+function ns.GuildDigest()
+	if guildDigest then return guildDigest end
+	local sum = 0
+	for key, g in pairs(ns.db.guilds) do
+		sum = (sum + Hash(key .. "=" .. ns.SerializeGuild(g))) % 4294967296
+	end
+	guildDigest = sum
+	return sum
+end
+
+-- Every guild entry, removed ones too (for sync), in key order.
+function ns.AllGuildEntries()
+	local list = {}
+	for _, g in pairs(ns.db.guilds) do list[#list + 1] = g end
+	table.sort(list, function(a, b) return a.n:lower() < b.n:lower() end)
+	return list
 end
 
 function ns.BucketHashes()
@@ -568,6 +617,126 @@ function ns.MergeIncoming(e)
 end
 
 -----------------------------------------------------------------------
+-- Whole guilds
+-----------------------------------------------------------------------
+
+-- "<Red Hand>" or " red hand " -> "Red Hand"-style text and its key.
+function ns.CleanGuildName(name)
+	if type(name) ~= "string" then return nil end
+	name = name:gsub("^%s*<", ""):gsub(">%s*$", "")
+	return ns.Clean(name, GUILD_LIMITS.n)
+end
+
+function ns.GuildKey(name)
+	name = ns.CleanGuildName(name)
+	return name and name:lower()
+end
+
+-- The entry for a guild while it's on the list, else nil.
+function ns.GetGuild(name)
+	local key = ns.GuildKey(name)
+	local g = key and ns.db and ns.db.guilds[key]
+	if g and not g.x then return g end
+	return nil
+end
+
+-- Every listed guild, sorted by name.
+function ns.GuildList()
+	local list = {}
+	for _, g in ipairs(ns.AllGuildEntries()) do
+		if not g.x then list[#list + 1] = g end
+	end
+	return list
+end
+
+function ns.GuildCount()
+	return #ns.GuildList()
+end
+
+local function CopyGuild(g)
+	local c = {}
+	for _, f in ipairs(GUILD_SHARED) do c[f] = g[f] end
+	return c
+end
+
+local function CommitGuild(key, g, fromSync)
+	ns.db.guilds[key] = g
+	ns.InvalidateHashes()
+	ns.Fire("LIST_CHANGED", nil, nil, fromSync)
+	if not fromSync and ns.SendGuildUpdate then ns.SendGuildUpdate(g) end
+end
+
+-- Puts a whole guild on the list. Returns the entry and whether it was
+-- newly added.
+function ns.AddGuild(name, reason)
+	name = ns.CleanGuildName(name)
+	if not name then return nil end
+	local key = name:lower()
+	local old = ns.db.guilds[key]
+	local wasListed = old and not old.x
+	local g = old and CopyGuild(old) or {}
+	g.n = (wasListed and old.n) or name
+	if reason ~= nil then g.w = ns.Clean(reason, GUILD_LIMITS.w) end
+	if not wasListed then
+		g.b = ns.Clean(ns.MyFullName(), GUILD_LIMITS.b)
+		g.a = ns.Now()
+	end
+	g.x, g.y = nil, nil
+	if wasListed and g.w == old.w then return old, false end
+	g.t = Stamp(old)
+	CommitGuild(key, g)
+	return g, not wasListed
+end
+
+function ns.SetGuildReason(name, reason)
+	local old = ns.GetGuild(name)
+	if not old then return end
+	local g = CopyGuild(old)
+	g.w = ns.Clean(reason, GUILD_LIMITS.w)
+	if g.w == old.w then return end
+	g.t = Stamp(old)
+	CommitGuild(old.n:lower(), g)
+end
+
+function ns.RemoveGuild(name)
+	local old = ns.GetGuild(name)
+	if not old then return nil end
+	local g = CopyGuild(old)
+	g.x = true
+	g.y = ns.Clean(ns.MyFullName(), GUILD_LIMITS.y)
+	g.t = Stamp(old)
+	CommitGuild(old.n:lower(), g)
+	return g
+end
+
+-- A guild typed in lower case gets the game's own spelling once one of
+-- its members is seen.
+function ns.LearnGuildSpelling(name)
+	local old = ns.GetGuild(name)
+	name = ns.CleanGuildName(name)
+	if not old or not name or old.n == name then return end
+	local g = CopyGuild(old)
+	g.n = name
+	g.t = Stamp(old)
+	CommitGuild(name:lower(), g)
+end
+
+-- A guild entry that came from a guildmate. Returns true when it changed ours.
+function ns.MergeIncomingGuild(g)
+	local key = g.n:lower()
+	local old = ns.db.guilds[key]
+	if old and not ns.IsNewer(g, old, ns.SerializeGuild) then return false end
+	local wasListed = old and not old.x
+	CommitGuild(key, g, true)
+	if not g.x and not wasListed then
+		ns.Fire("GUILD_ADDED_BY_GUILD", key, g)
+	elseif g.x and wasListed then
+		ns.Fire("GUILD_REMOVED_BY_GUILD", key, g)
+	end
+	return true
+end
+
+-----------------------------------------------------------------------
 -- Events
 -----------------------------------------------------------------------
 
@@ -657,6 +826,13 @@ function ns.ImportStandalone()
 					if copy[k] == nil and not ns.IsSharedField(k) then copy[k] = v end
 				end
 				ns.MergeIncoming(copy)
+			end
+		end
+		if type(old.guilds) == "table" then
+			for _, g in pairs(old.guilds) do
+				local copy = type(g) == "table" and type(g.n) == "string" and type(g.t) == "number"
+					and ns.DeserializeGuild(ns.SerializeGuild(g))
+				if copy then ns.MergeIncomingGuild(copy) end
 			end
 		end
 		ns.syncQuiet = false

@@ -14,7 +14,12 @@ local HELP = {
 	"/kos add <name> [reason] - add someone by name (Name, or Name-Realm for someone from elsewhere)",
 	"/kos remove <name> - take someone off the list (for everyone)",
 	"/kos reason <name> <reason> - change someone's reason",
-	"/kos check <name> - is this player on the list?",
+	"/kos check <name> - is this player (or guild) on the list?",
+	"/kos guild - put your target's whole guild on the list (asks for a reason)",
+	"/kos guild add <guild>[: reason] - put a whole guild on the list by name",
+	"/kos guild remove <guild> - take a guild off the list (for everyone)",
+	"/kos guild reason <guild>: <reason> - change a guild's reason",
+	"/kos guilds - list the guilds on the kill list",
 	"/kos seen - everyone you've come across, with your wins and losses",
 	"/kos nearby - show or hide the nearby enemies window",
 	"/kos plates - turn on enemy nameplates (spots enemies as soon as they're in range)",
@@ -39,7 +44,7 @@ end
 local function Status()
 	local say = ns.Print
 	say((ns.embedded and "K-UI's kill list" or "standalone addon") .. (ns.embedded and "" or (" version " .. ns.VERSION))
-		.. (_G.BHGKillListStandalone and ns.embedded and " (the standalone addon is installed and asleep)" or "") .. ", " .. ns.Count() .. " players on the list (" .. (function()
+		.. (_G.BHGKillListStandalone and ns.embedded and " (the standalone addon is installed and asleep)" or "") .. ", " .. ns.Count() .. " players and " .. ns.GuildCount() .. " whole guilds on the list (" .. (function()
 		local n = 0
 		for _, e in pairs(ns.db.entries) do if e.x then n = n + 1 end end
 		return n
@@ -55,7 +60,8 @@ local function Status()
 	say("last send: " .. (s.lastResult or "none yet") .. " | client checks: " .. ns.CommChecks())
 	local digests = {}
 	for i, h in ipairs(ns.BucketHashes()) do digests[i] = ns.ToB36(h) end
-	say("list fingerprint: " .. ns.ToB36(ns.Hash(table.concat(digests, ","))) .. " (the same on every guild member's PC once they're in sync)")
+	say("list fingerprint: " .. ns.ToB36(ns.Hash(table.concat(digests, ","))) .. ", guilds " .. ns.ToB36(ns.GuildDigest())
+		.. " (the same on every guild member's PC once they're in sync)")
 	local w, l, seenCount = ns.Totals()
 	say("seen " .. seenCount .. " enemy players, record " .. ns.Score({ w = w, l = l }) .. ".")
 	local plates = ns.EnemyPlatesOn()
@@ -74,6 +80,47 @@ local function Status()
 		say("  caught errors in '" .. label .. "': " .. n)
 	end
 	if not any then say("no errors caught so far.") end
+end
+
+local function ListGuilds()
+	local list = ns.GuildList()
+	if #list == 0 then
+		ns.Print("no guilds on the list. /kos guild adds your target's guild.")
+		return
+	end
+	ns.Print(#list .. " guild" .. (#list == 1 and "" or "s") .. " on the list:")
+	for _, g in ipairs(list) do
+		print("  |cffffd200<" .. g.n .. ">|r" .. (g.w and (" - " .. g.w) or "") .. " |cff999999(added by " .. ns.ShortSender(g.b) .. ", " .. ns.Ago(g.a) .. ")|r")
+	end
+end
+
+-- "/kos guild ..." (guild names have spaces, so a reason comes after a colon).
+local function GuildCommand(rest)
+	local sub, arg = rest:match("^(%S*)%s*(.-)$")
+	sub = sub:lower()
+	local name, reason = arg:match("^([^:]*):%s*(.-)%s*$")
+	if not name then name = arg end
+	if reason == "" then reason = nil end
+	if sub == "" or (sub == "add" and name == "") then
+		local guild, why = ns.TargetGuild()
+		if not guild then ns.Print(why .. " Or type /kos guild add <guild name>.") return end
+		ns.AskGuildReason(guild)
+	elseif sub == "add" then
+		ns.AddGuildWithMessage(name, reason)
+	elseif sub == "remove" or sub == "rem" or sub == "del" then
+		if not ns.GetGuild(name) then ns.Print("no guild called \"" .. name .. "\" is on the list.") return end
+		ns.RemoveGuildWithMessage(name)
+	elseif sub == "reason" then
+		if not ns.GetGuild(name) then ns.Print("usage: /kos guild reason <guild>: <reason>") return end
+		ns.SetGuildReason(name, reason)
+		ns.Print("reason updated.")
+	elseif sub == "list" then
+		ListGuilds()
+	else
+		for _, line in ipairs(HELP) do
+			if line:find("guild") then print("  " .. line) end
+		end
+	end
 end
 
 local function Find(arg)
@@ -126,11 +173,18 @@ local function Handler(msg)
 	elseif cmd == "check" then
 		local key, name = Find(rest)
 		local e = key and ns.Get(key)
+		local g = not e and ns.GetGuild(rest)
 		if e then
 			ns.Print(ns.ColorName(e) .. " is on the list" .. (e.w and (": " .. e.w) or "") .. " (added by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a) .. ").")
+		elseif g then
+			ns.Print("the whole guild <" .. g.n .. "> is on the list" .. (g.w and (": " .. g.w) or "") .. " (added by " .. ns.ShortSender(g.b) .. ", " .. ns.Ago(g.a) .. ").")
 		else
 			ns.Print((name or rest) .. " isn't on the list.")
 		end
+	elseif cmd == "guild" then
+		GuildCommand(rest)
+	elseif cmd == "guilds" then
+		ListGuilds()
 	elseif cmd == "seen" or cmd == "stats" then
 		ns.ShowPage("seen")
 	elseif cmd == "plates" then

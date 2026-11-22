@@ -6,6 +6,9 @@ focus and mouseover (and the combat log, on a client that lets addons
 read it; Forever currently doesn't). Every enemy player seen lands in the
 nearby list for a minute; a player on the kill list also sets off the
 warning and, if sharing is on, tells the guild where they were seen.
+A member of a listed guild sets off the warning too (the banner and
+sound once a minute per guild, so a whole raid of them doesn't drown you
+out) but isn't shared with the guild: everyone recognises them on sight.
 
 Also adds the list to unit tooltips and to the right-click menu on
 players.
@@ -18,6 +21,7 @@ ns.nearby = {}       -- key -> { name, realm, class, level, guild, race, hostile
 local lastAlert = {}  -- key -> GetTime()
 local lastShared = {} -- key -> GetTime()
 local lastGuildNote = {} -- key -> GetTime()
+local lastGuildAlert = {} -- listed guild key -> GetTime()
 
 -- The Star Trek alerts from Spy.
 local SOUNDS = {
@@ -46,8 +50,10 @@ local function Call(fn, ...)
 	return Plain(a), Plain(b), Plain(c)
 end
 
--- Players this PC has seen on our side this session (key -> true).
+-- Players this PC has seen on our side this session (key -> true), and
+-- their guilds (guild key -> true).
 ns.allies = {}
+ns.allyGuilds = {}
 
 -- Guild members, by key, read from the roster when it changes.
 local guildKeys, guildKeysDirty = {}, true
@@ -80,6 +86,14 @@ function ns.IsAlly(info)
 	if Call(UnitInParty, who) or Call(UnitInRaid, who) then return true end
 	if who2 and (Call(UnitInParty, who2) or Call(UnitInRaid, who2)) then return true end
 	return false
+end
+
+-- Is this guild on our side: our own, or one seen on our side this session?
+function ns.IsAllyGuild(name)
+	local key = ns.GuildKey(name)
+	if not key then return false end
+	local mine = PlainText(Call(GetGuildInfo, "player"))
+	return ns.allyGuilds[key] or (mine and mine:lower() == key) or false
 end
 
 -- Says no (and why) when someone tries to put an ally on the list.
@@ -117,7 +131,10 @@ function ns.ReadUnit(unit)
 	elseif not hostile then
 		ally = Call(UnitIsFriend, "player", unit) and true or nil
 	end
-	if ally then ns.allies[ns.Key(name, realm or ns.MyRealm())] = true end
+	if ally then
+		ns.allies[ns.Key(name, realm or ns.MyRealm())] = true
+		if type(guild) == "string" and guild ~= "" then ns.allyGuilds[guild:lower()] = true end
+	end
 	return {
 		name = name,
 		realm = realm or ns.MyRealm(),
@@ -162,7 +179,8 @@ end
 -- A sighting
 -----------------------------------------------------------------------
 
-function ns.Alert(e, info, test)
+-- quiet: the line in chat only (no sound, banner or flash).
+function ns.Alert(e, info, test, quiet)
 	local key = ns.Key(e.n, e.r)
 	local now = GetTime()
 	if not test and lastAlert[key] and now - lastAlert[key] < (ns.Setting("alertCooldown") or 60) then return end
@@ -173,9 +191,26 @@ function ns.Alert(e, info, test)
 		local why = e.w and (" - " .. e.w) or ""
 		ns.Print("|cffff2020KILL ON SIGHT:|r " .. ns.ColorName(e) .. levelText .. why .. " |cff999999(added by " .. ns.ShortSender(e.b) .. ")|r")
 	end
+	if quiet then return end
 	if ns.Setting("sound") then ns.PlaySound("kos") end
 	if FlashClientIcon then pcall(FlashClientIcon) end
 	if ns.Setting("banner") and ns.ShowBanner then ns.ShowBanner(e, level) end
+end
+
+-- How a member of a listed guild is warned about: like a listed player,
+-- with the guild's reason.
+function ns.GuildMemberEntry(g, info)
+	return {
+		n = ns.ProperName(info.name), r = info.realm, c = info.class, g = info.guild or g.n,
+		w = "whole guild <" .. g.n .. "> is on the list" .. (g.w and (": " .. g.w) or ""), b = g.b,
+	}
+end
+
+local function GuildAlert(g, info)
+	local gkey = g.n:lower()
+	local loud = not lastGuildAlert[gkey] or GetTime() - lastGuildAlert[gkey] >= (ns.Setting("alertCooldown") or 60)
+	if loud then lastGuildAlert[gkey] = GetTime() end
+	ns.Alert(ns.GuildMemberEntry(g, info), info, false, not loud)
 end
 
 local lastNearbySound = 0
@@ -195,7 +230,8 @@ local function Seen(info, fromCombatLog)
 		end
 		return
 	end
-	if not e and not info.hostile then return end
+	local g = not e and ns.GetGuild(info.guild)
+	if not e and not g and not info.hostile then return end
 
 	local n = ns.nearby[key]
 	local isNewcomer = not n
@@ -206,7 +242,7 @@ local function Seen(info, fromCombatLog)
 		ns.nearbyDirty = true
 	end
 	if ns.RecordEnemy then ns.RecordEnemy(info, isNewcomer) end
-	if isNewcomer and not e and info.hostile and not info.dead and ns.Setting("nearbySound")
+	if isNewcomer and not e and not g and info.hostile and not info.dead and ns.Setting("nearbySound")
 		and GetTime() - lastNearbySound > 2 then
 		lastNearbySound = GetTime()
 		ns.PlaySound("nearby")
@@ -219,6 +255,11 @@ local function Seen(info, fromCombatLog)
 	n.hostile = info.hostile or n.hostile
 	n.seen = GetTime()
 
+	if g then
+		if not fromCombatLog then ns.LearnGuildSpelling(info.guild) end
+		if not info.dead then GuildAlert(ns.GetGuild(info.guild), info) end
+		return
+	end
 	if not e then return end
 	-- Things only this PC keeps.
 	e.lv = info.level or e.lv
@@ -256,13 +297,15 @@ function ns.NearbyList()
 			ns.nearbyDirty = true
 		else
 			local e = ns.Get(key)
-			if e or ns.Setting("nearbyAll") then
-				list[#list + 1] = { key = key, n = n, e = e }
+			local g = not e and ns.GetGuild(n.guild) or nil
+			if e or g or ns.Setting("nearbyAll") then
+				list[#list + 1] = { key = key, n = n, e = e, g = g }
 			end
 		end
 	end
 	table.sort(list, function(a, b)
-		if (a.e ~= nil) ~= (b.e ~= nil) then return a.e ~= nil end
+		local la, lb = (a.e or a.g) ~= nil, (b.e or b.g) ~= nil
+		if la ~= lb then return la end
 		return a.n.seen > b.n.seen
 	end)
 	return list
@@ -474,6 +517,13 @@ ns.Listen("ADDED_BY_GUILD", function(_, e)
 	end
 	ns.Print(ns.ColorName(e) .. " was added by " .. ns.ShortSender(e.b) .. (e.w and (": " .. e.w) or "."))
 end)
+ns.Listen("GUILD_ADDED_BY_GUILD", function(_, g)
+	ns.Print("the whole guild |cffffd200<" .. g.n .. ">|r was put on the list by " .. ns.ShortSender(g.b) .. (g.w and (": " .. g.w) or "."))
+end)
+ns.Listen("GUILD_REMOVED_BY_GUILD", function(_, g)
+	if ns.syncQuiet then return end
+	ns.Print("the guild <" .. g.n .. "> was taken off the list by " .. ns.ShortSender(g.y) .. ".")
+end)
 ns.Listen("SYNC_SETTLED", function()
 	if caughtUp > 0 then
 		ns.Print("caught up with the guild: " .. caughtUp .. " player" .. (caughtUp == 1 and "" or "s") .. " added to your list (" .. ns.Count() .. " in all).")
@@ -495,9 +545,13 @@ local function OnUnitTooltip(tooltip)
 	if not info then return end
 	local key = ns.Key(info.name, info.realm)
 	local e = ns.Get(key)
+	local g = not e and not info.ally and ns.GetGuild(info.guild)
 	if e then
 		tooltip:AddLine("Kill on sight" .. (e.w and (": " .. e.w) or ""), 1, 0.15, 0.15, true)
 		tooltip:AddLine("BH&G Kill List, added by " .. ns.ShortSender(e.b), 0.6, 0.6, 0.6)
+	elseif g then
+		tooltip:AddLine("Kill on sight: the whole guild <" .. g.n .. ">" .. (g.w and (": " .. g.w) or ""), 1, 0.15, 0.15, true)
+		tooltip:AddLine("BH&G Kill List, added by " .. ns.ShortSender(g.b), 0.6, 0.6, 0.6)
 	end
 	local rec = ns.Enemy and ns.Enemy(key)
 	if rec and (e or info.hostile) and ((rec.w or 0) + (rec.l or 0)) > 0 then
@@ -553,6 +607,17 @@ local function AddMenuButton(_, rootDescription, contextData)
 			ns.AskReason(info)
 		end)
 	end
+	if info.guild and not ns.IsAlly(info) then
+		if ns.GetGuild(info.guild) then
+			rootDescription:CreateButton("|cffe03c3cRemove guild <" .. info.guild .. "> from BH&G Kill List|r", function()
+				ns.AskRemoveGuild(info.guild)
+			end)
+		else
+			rootDescription:CreateButton("|cffe03c3cAdd the whole guild <" .. info.guild .. "> to BH&G Kill List|r", function()
+				ns.AskGuildReason(info.guild)
+			end)
+		end
+	end
 end
 
 if Menu and Menu.ModifyMenu then
@@ -589,6 +654,50 @@ function ns.RemoveWithMessage(key)
 	else
 		ns.Print("that player isn't on the list.")
 	end
+end
+
+-- Says no (and why) when someone tries to put a guild on our side on the list.
+function ns.RefuseAllyGuild(name)
+	if not ns.IsAllyGuild(name) then return false end
+	ns.Print("<" .. ns.CleanGuildName(name) .. "> is on our side, so it can't go on the kill list.")
+	return true
+end
+
+function ns.AddGuildWithMessage(name, reason)
+	if not ns.CleanGuildName(name) then
+		ns.Print("that isn't a guild name.")
+		return
+	end
+	if ns.RefuseAllyGuild(name) then return end
+	local g, isNew = ns.AddGuild(name, reason)
+	if not g then return end
+	if isNew then
+		if ns.Setting("sound") then ns.PlaySound("add") end
+		ns.Print("added the whole guild |cffffd200<" .. g.n .. ">|r" .. (g.w and (": " .. g.w) or "")
+			.. ". Every member you come across is kill on sight, and guild members with the addon get it too.")
+	else
+		ns.Print("<" .. g.n .. "> is on the list" .. (g.w and (": " .. g.w) or "") .. ".")
+	end
+	return g
+end
+
+function ns.RemoveGuildWithMessage(name)
+	local g = ns.RemoveGuild(name)
+	if g then
+		if ns.Setting("sound") then ns.PlaySound("remove") end
+		ns.Print("removed the guild <" .. g.n .. "> from the list. Players added one by one stay on it.")
+	else
+		ns.Print("that guild isn't on the list.")
+	end
+end
+
+-- The guild of your target, when it's an enemy player in a guild.
+function ns.TargetGuild()
+	local info = ns.ReadUnit("target")
+	if not info then return nil, "target an enemy player first." end
+	if not info.guild then return nil, ns.ProperName(info.name) .. " isn't in a guild (or the game isn't showing it)." end
+	if ns.IsAlly(info) then return nil, ns.ProperName(info.name) .. " is on our side." end
+	return info.guild
 end
 
 function ns.TargetInfo()

@@ -13,9 +13,14 @@
 --
 -- The throttle chance (0 to 1) makes that share of sends come back
 -- "throttled", like the real client does under load.
+--
+-- A 5th argument, a folder holding an older version's addon files
+-- (e.g. from git archive), also checks that version in a guild with
+-- this one.
 local DIR = arg[1]
 KUI_FILE = arg[4]
 THROTTLE = tonumber(arg[3])
+local OLD_DIR = arg[5]
 local FILES = { "Core.lua", "Sync.lua", "Detect.lua", "Stats.lua", "UI.lua", "Commands.lua" }
 
 local clock = 0
@@ -137,10 +142,10 @@ local function Login(name, db, addons)
   env.BHGKillListDB = c.saved.BHGKillListDB
   env.KainUIForeverKoSDB = c.saved.KainUIForeverKoSDB
   local standalone, kui
-  if addons == "standalone" or addons == "both" then
+  if addons == "standalone" or addons == "both" or addons == "old" then
     standalone = {}
     for _, file in ipairs(FILES) do
-      local chunk = assert(loadfile(DIR .. "/" .. file))
+      local chunk = assert(loadfile((addons == "old" and OLD_DIR or DIR) .. "/" .. file))
       setfenv(chunk, env)
       chunk("BHG-Kill-List", standalone)
     end
@@ -201,17 +206,20 @@ local function Run(seconds)
   end
 end
 
-local function Fingerprint(c)
+-- The player buckets and the guild list (playersOnly: just the players,
+-- to compare with a version from before guilds).
+local function Fingerprint(c, playersOnly)
   local ns = c.ns
   local parts = {}
   for i, h in ipairs(ns.BucketHashes()) do parts[i] = h end
+  if not playersOnly then parts[#parts+1] = ns.GuildDigest() end
   return table.concat(parts, ",")
 end
 
-local function AllSame(list)
+local function AllSame(list, playersOnly)
   local fp
   for _, c in pairs(list or online) do
-    local f = Fingerprint(c)
+    local f = Fingerprint(c, playersOnly)
     if fp and f ~= fp then return false end
     fp = f
   end
@@ -521,7 +529,8 @@ B.sentCount = 0
 Run(120)
 Check(AllSame(), "Oldtimer, Kuser and Suser all have the same list")
 Check(Has(B, "Fromkui") and Has(B, "Fromstandalone"), "Oldtimer caught up with both")
-Check(B.sentCount <= 3, "only one copy talks for Oldtimer (" .. B.sentCount .. " messages)")
+-- Its hello (players and guilds) and one bucket: one copy talking, not two.
+Check(B.sentCount <= 4, "only one copy talks for Oldtimer (" .. B.sentCount .. " messages)")
 local slash = B.env.SlashCmdList.BHGKILLLIST
 B.log = {}
 slash("status")
@@ -551,6 +560,100 @@ Check(not B.kui.active and offNote, "K-UI alone, turned off: /kos only offers /k
 B.env.SlashCmdList.BHGKILLLIST("on") Run(1) Logout("Oldtimer")
 B = Login("Oldtimer", nil, "kui")
 Check(B.kui.active, "and /kos on brings it back")
+end
+
+---------------------------------------------------------------- scenario 10
+print("== 10. whole guilds on the list")
+for n in pairs(online) do Logout(n) end
+local G1, G2 = Login("Guildy1"), Login("Guildy2")
+Run(60)
+local function Slash(c, msg) c.env.SlashCmdList.BHGKILLLIST(msg) end
+local function Said(c, ...)
+  for _, l in ipairs(c.log) do
+    local all = true
+    for _, bit in ipairs({ ... }) do if not l:find(bit, 1, true) then all = false end end
+    if all then return true end
+  end
+  return false
+end
+G2.log = {}
+Slash(G1, "guild add <red hand>: camps the flight path") Run(5)
+local rh = G2.ns.GetGuild("Red Hand")
+Check(rh and rh.w == "camps the flight path", "a guild added by slash reached a guildmate with its reason")
+Check(Said(G2, "whole guild", "red hand", "Guildy1"), "and they were told in chat")
+Check(G1.ns.Count() == G2.ns.Count(), "a guild doesn't count as a player")
+local G3 = Login("Guildy3") Run(120)
+Check(G3.ns.GetGuild("RED HAND") ~= nil, "a fresh install caught up with the guild list")
+Check(AllSame(), "all three in sync, guilds included")
+Logout("Guildy2")
+Slash(G1, "guild remove Red Hand") Run(5)
+Slash(G3, "guild add Blood Pact") Run(5)
+G2 = Login("Guildy2") Run(120)
+Check(not G2.ns.GetGuild("Red Hand"), "a guild removed while someone was offline stays removed")
+Check(G2.ns.GetGuild("Blood Pact") ~= nil, "and the guild added while they were away arrived")
+Check(AllSame(), "all three in sync")
+Slash(G2, "guild add red hand: back again") Run(5)
+Check(G1.ns.GetGuild("Red Hand") and G1.ns.GetGuild("Red Hand").w == "back again", "a guild can go back on the list")
+-- Seeing members.
+local gunits = {
+  nameplate1 = { name = "Grunty", class = "WARRIOR", level = 60, guild = "Red Hand", faction = "Horde" },
+  nameplate2 = { name = "Grunta", class = "SHAMAN", level = 58, guild = "Red Hand", faction = "Horde" },
+  nameplate3 = { name = "Lostsoul", class = "PRIEST", level = 60, guild = "Red Hand", faction = "Alliance" },
+  nameplate4 = { name = "Nobody", class = "MAGE", level = 30, faction = "Horde" },
+}
+local genv = G1.env
+local function GU(u) return gunits[u] end
+genv.UnitExists = function(u) return GU(u) ~= nil end
+genv.UnitIsPlayer = function(u) return GU(u) ~= nil end
+genv.UnitIsUnit = function() return false end
+genv.UnitName = function(u) if u == "player" then return "Guildy1" end return GU(u) and GU(u).name end
+genv.UnitClass = function(u) return "x", GU(u) and GU(u).class end
+genv.UnitLevel = function(u) return GU(u) and GU(u).level end
+genv.GetGuildInfo = function(u) if u == "player" then return "Better Homes" end return GU(u) and GU(u).guild end
+genv.UnitIsEnemy = function(_, u) return GU(u) and GU(u).faction == "Horde" end
+genv.UnitFactionGroup = function(u) if u == "player" then return "Alliance" end return GU(u) and GU(u).faction end
+G1.log, G1.sounds, G2.log, G2.sounds = {}, {}, {}, {}
+local function KosSounds() local n = 0 for _, x in ipairs(G1.sounds) do if x == "detected-kos" then n = n + 1 end end return n end
+Fire(G1, "NAME_PLATE_UNIT_ADDED", "nameplate1") Run(1)
+Check(Said(G1, "KILL ON SIGHT", "Grunty", "Red Hand", "back again"), "a member of a listed guild sets off the warning, with the guild's reason")
+Check(KosSounds() == 1, "with the warning sound")
+Check(G1.ns.Get(G1.ns.Key("Grunty", "Forever")) == nil, "the member isn't added as a player")
+Fire(G1, "NAME_PLATE_UNIT_ADDED", "nameplate2") Run(1)
+Check(Said(G1, "KILL ON SIGHT", "Grunta"), "a second member gets their own line in chat")
+Check(KosSounds() == 1, "but no second sound within a minute (" .. KosSounds() .. ")")
+Run(5)
+Check(not Said(G2, "spotted"), "members of a listed guild aren't announced to the guild")
+Check(G2.ns.db.guilds["red hand"].n == "Red Hand", "the game's spelling of the guild name reached everyone")
+Fire(G1, "NAME_PLATE_UNIT_ADDED", "nameplate3") Fire(G1, "NAME_PLATE_UNIT_ADDED", "nameplate4") Run(1)
+Check(not Said(G1, "KILL ON SIGHT", "Lostsoul"), "someone on our side in a guild with the same name doesn't warn")
+local glist = G1.ns.NearbyList()
+local listedRows = 0
+for _, item in ipairs(glist) do if item.g then listedRows = listedRows + 1 end end
+Check(listedRows == 2 and glist[1].g and glist[2].g and not glist[3].g, "the nearby list marks both members and puts them on top")
+G1.log = {}
+Slash(G1, "guild add Better Homes")
+Check(G1.ns.GetGuild("Better Homes") == nil and Said(G1, "on our side"), "our own guild can't go on the list")
+Slash(G1, "guild reason Red Hand: kills herbalists") Run(5)
+Check(G3.ns.GetGuild("Red Hand").w == "kills herbalists", "a new reason reached everyone")
+Slash(G1, "guilds") Slash(G1, "check Red Hand") Slash(G1, "guild") Slash(G1, "guild help") Slash(G1, "status")
+Check(Said(G1, "kills herbalists"), "/kos guilds lists them")
+Slash(G1, "guild remove red hand") Run(5)
+Check(not G3.ns.GetGuild("Red Hand"), "a guild removed by slash comes off everyone's list")
+Check(AllSame(), "all three in sync at the end")
+
+if OLD_DIR then
+print("== 10b. an older version in the same guild")
+local O = Login("Oldversion", nil, "old")
+Run(120)
+Add(O, "Fromold", "old add") Run(5)
+Check(Has(G1, "Fromold"), "an add from the older version reaches this one")
+Add(G1, "Fromnew", "new add") Slash(G1, "guild add Horde Elite") Run(5)
+Check(Has(O, "Fromnew"), "an add from this version reaches the older one")
+Check(AllSame(nil, true), "everyone has the same players")
+Check(G2.ns.GetGuild("Horde Elite") ~= nil, "guilds still spread among the newer ones")
+local before10 = totalMessages
+Logout("Guildy2") G2 = Login("Guildy2") Run(120)
+Check(totalMessages - before10 <= 3, "an in-sync login costs just its hello, older version online (" .. (totalMessages - before10) .. ")")
 end
 
 local errs = 0

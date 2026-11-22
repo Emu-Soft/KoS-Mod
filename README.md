@@ -15,6 +15,7 @@
 One kill-on-sight list for the whole guild. Add someone and every guild member running the addon gets them too.
 
 - **A warning when they show up.** When a player on the list appears near you (on a nameplate, as your target or under your mouse), you get a banner, a warning sound and a line in chat with why they're on the list and who added them.
+- **Whole guilds too.** Put an entire guild on the list and every member of it you come across counts as kill on sight.
 - **The guild hears about it.** Your guildmates see "*Name* spotted by *you* in *Goldshire, Elwynn Forest*" in their chat.
 - **Horde Scum Nearby.** A small window lists the enemy players around you, the ones on the list on top in red, with your wins and losses against each. Left-click a name to target them; right-click to add or remove them. It puts itself away in dungeons and raids and comes back when you leave; battlegrounds keep it.
 - **Always in sync.** Anything added, changed or removed reaches every guild member online straight away. Anyone who was offline catches up a few seconds after logging in, removals included.
@@ -54,6 +55,14 @@ To update, replace the `BHG-Kill-List` folder with the one from the newest relea
 
 You'll be asked for a reason. It's optional, but it's what the whole guild sees when that player shows up.
 
+## Adding whole guilds
+
+- **Right-click** one of its members (their portrait, or their row in Horde Scum Nearby) and pick **Add the whole guild**.
+- **Target one of them** and type `/kos guild`, or click **Add guild** in the list window (their guild is filled in for you).
+- **By name:** `/kos guild add Guild Name: a reason`.
+
+Every member of a listed guild you come across sets off the warning, with the guild's reason. The game doesn't let addons see who is in an enemy guild, so a member is recognised the moment you see them and the game shows their guild, not before. When several members show up together you get the banner and sound once a minute for that guild and a line in chat for each one. Your own guild can't be added.
+
 ## Commands
 
 | Command | What it does |
@@ -62,7 +71,12 @@ You'll be asked for a reason. It's optional, but it's what the whole guild sees 
 | `/kos add [name] [reason]` | Add your target, or someone by name. |
 | `/kos remove <name>` | Take someone off the list (for everyone). |
 | `/kos reason <name> <reason>` | Change someone's reason. |
-| `/kos check <name>` | Is this player on the list? |
+| `/kos check <name>` | Is this player (or guild) on the list? |
+| `/kos guild` | Put your target's whole guild on the list. |
+| `/kos guild add <guild>[: reason]` | Put a whole guild on the list by name. |
+| `/kos guild remove <guild>` | Take a guild off the list (for everyone). Players added one by one stay on it. |
+| `/kos guild reason <guild>: <reason>` | Change a guild's reason. |
+| `/kos guilds` | List the guilds on the kill list. |
 | `/kos seen` | Everyone you've come across, with your wins and losses against them. |
 | `/kos nearby` | Show or hide the Horde Scum Nearby window. |
 | `/kos plates` | Turn on enemy nameplates, so enemies are spotted as soon as they're in range. |

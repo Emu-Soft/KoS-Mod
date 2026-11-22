@@ -12,6 +12,13 @@ Messages (prefix BHGKOS1, one line each, at most 250 bytes):
   D~<entry>^<entry>... entries (several per message)
   S~<name>~<realm>~<zone>   "I just spotted this listed player here"
 
+Listed guilds travel the same way as one extra bucket, number 17:
+  G~<guild entry>      a change to a listed guild
+  Q~<digest>           sent right after H: what my guild list looks like
+  B~17~<digest>        followed by E~<guild entry>^... messages
+Versions from before guilds ignore G, Q, E and bucket 17, and their
+16-digest H is unchanged, so mixed versions keep syncing players.
+
 How a login catches up:
   1. A few seconds after logging in you send H with your 16 digests.
   2. Everyone online compares; for each bucket that differs, after a
@@ -44,6 +51,13 @@ ns.sync = {
 	lastHello = nil, peers = {},
 }
 local stats = ns.sync
+local GUILD_BUCKET = ns.BUCKETS + 1
+
+-- My digest for bucket i (the last one is the guild list).
+local function Digest(i)
+	if i == GUILD_BUCKET then return ns.GuildDigest() end
+	return ns.BucketHashes()[i]
+end
 
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
 	pcall(C_ChatInfo.RegisterAddonMessagePrefix, COMM_PREFIX)
@@ -161,10 +175,16 @@ function ns.SendUpdate(e)
 	Send("U~" .. ns.Serialize(e))
 end
 
+function ns.SendGuildUpdate(g)
+	if not IsInGuild() then return end
+	Send("G~" .. ns.SerializeGuild(g))
+end
+
 function ns.SendHello()
 	if not IsInGuild() then return false end
 	stats.lastHello = GetTime()
 	Send("H~" .. HashList())
+	Send("Q~" .. ns.ToB36(ns.GuildDigest()))
 	return true
 end
 
@@ -172,15 +192,18 @@ local lastBucketSent = {}
 local inFlight = {} -- bucket -> the digest I announced for it, while its messages go out
 
 local function SendBucket(i)
-	local digest = ns.BucketHashes()[i]
+	local digest = Digest(i)
 	lastBucketSent[i] = GetTime()
 	inFlight[i] = digest
 	Send("B~" .. i .. "~" .. ns.ToB36(digest), i)
+	local isGuilds = i == GUILD_BUCKET
+	local kind = isGuilds and "E~" or "D~"
+	local serialize = isGuilds and ns.SerializeGuild or ns.Serialize
 	local chunk, size = {}, 2
-	for _, e in ipairs(ns.EntriesInBucket(i)) do
-		local s = ns.Serialize(e)
+	for _, e in ipairs(isGuilds and ns.AllGuildEntries() or ns.EntriesInBucket(i)) do
+		local s = serialize(e)
 		if size + #s + 1 > MAX_MESSAGE and #chunk > 0 then
-			Send("D~" .. table.concat(chunk, "^"), i)
+			Send(kind .. table.concat(chunk, "^"), i)
 			chunk, size = {}, 2
 		end
 		if 2 + #s <= MAX_MESSAGE then
@@ -188,7 +211,7 @@ local function SendBucket(i)
 			size = size + #s + 1
 		end
 	end
-	if #chunk > 0 then Send("D~" .. table.concat(chunk, "^"), i) end
+	if #chunk > 0 then Send(kind .. table.concat(chunk, "^"), i) end
 end
 
 function ns.SendSighting(e, zone)
@@ -220,12 +243,11 @@ end
 RunOffer = function()
 	offerTimer = nil
 	if #sendQueue > 0 then return end -- busy; OnQueueDrained schedules the next one
-	local mine = ns.BucketHashes()
 	local order = {}
 	for i in pairs(offers) do order[#order + 1] = i end
 	table.sort(order)
 	for _, i in ipairs(order) do
-		local heardSame = offers[i][mine[i]]
+		local heardSame = offers[i][Digest(i)]
 		local recently = lastBucketSent[i] and (GetTime() - lastBucketSent[i]) < BUCKET_RESEND
 		offers[i] = nil
 		if not heardSame and not recently then
@@ -249,12 +271,11 @@ end
 -- from mine (after merging what they sent) is missing something of mine.
 local function CheckSendBack()
 	quietTimer = nil
-	local mine = ns.BucketHashes()
 	local heard = announced
 	announced = {}
 	for i, digests in pairs(heard) do
 		for digest in pairs(digests) do
-			if digest ~= mine[i] then
+			if digest ~= Digest(i) then
 				Offer(i)
 				break
 			end
@@ -280,10 +301,10 @@ local function IsMe(sender)
 	return s == me
 end
 
-local function Merge(s, sender)
-	local e = ns.Deserialize(s)
+local function Merge(s, sender, isGuild)
+	local e = (isGuild and ns.DeserializeGuild or ns.Deserialize)(s)
 	if not e then return end
-	if ns.MergeIncoming(e) then
+	if (isGuild and ns.MergeIncomingGuild or ns.MergeIncoming)(e) then
 		stats.merged = stats.merged + 1
 		ns.lastMergeFrom = sender
 	end
@@ -295,21 +316,25 @@ local function OnMessage(text, sender)
 	if not kind then return end
 	stats.peers[sender] = GetTime()
 
-	if kind == "U" then
-		Merge(body, sender)
+	if kind == "U" or kind == "G" then
+		Merge(body, sender, kind == "G")
 
-	elseif kind == "D" then
+	elseif kind == "D" or kind == "E" then
 		ns.syncQuiet = true
 		for s in (body .. "^"):gmatch("([^%^]*)%^") do
-			if s ~= "" then Merge(s, sender) end
+			if s ~= "" then Merge(s, sender, kind == "E") end
 		end
 		ns.syncQuiet = false
 		TrafficSeen()
 
+	elseif kind == "Q" then
+		local digest = tonumber(body, 36)
+		if digest and digest ~= ns.GuildDigest() then Offer(GUILD_BUCKET) end
+
 	elseif kind == "B" then
 		local i, digest = body:match("^(%d+)~(%w+)$")
 		i, digest = tonumber(i), digest and tonumber(digest, 36)
-		if i and digest and i >= 1 and i <= ns.BUCKETS then
+		if i and digest and i >= 1 and i <= GUILD_BUCKET then
 			announced[i] = announced[i] or {}
 			announced[i][digest] = true
 			if offers[i] then offers[i][digest] = true end

@@ -107,6 +107,31 @@ StaticPopupDialogs[ns.POPUP_PREFIX .. "ADD_NAME"] = {
 	EditBoxOnEscapePressed = function(eb) eb:GetParent():Hide() end,
 }
 
+StaticPopupDialogs[ns.POPUP_PREFIX .. "ADD_GUILD"] = {
+	text = "Put a whole guild on the BH&G Kill List.\nEvery member you come across counts as kill on sight.\nGuild name:",
+	button1 = ACCEPT or "Accept",
+	button2 = CANCEL or "Cancel",
+	hasEditBox = 1,
+	maxLetters = 64,
+	timeout = 0, whileDead = 1, hideOnEscape = 1, exclusive = 1,
+	OnShow = function(dialog)
+		local eb = EditBoxOf(dialog)
+		if eb then eb:SetText(ns.TargetGuild() or "") eb:SetFocus() end
+	end,
+	OnAccept = function(dialog)
+		local eb = EditBoxOf(dialog)
+		local name = ns.CleanGuildName(eb and eb:GetText() or "")
+		if not name then ns.Print("that isn't a guild name.") return end
+		C_Timer.After(0.05, function() ns.AskGuildReason(name) end)
+	end,
+	EditBoxOnEnterPressed = function(eb)
+		local dialog = eb:GetParent()
+		StaticPopupDialogs[ns.POPUP_PREFIX .. "ADD_GUILD"].OnAccept(dialog)
+		dialog:Hide()
+	end,
+	EditBoxOnEscapePressed = function(eb) eb:GetParent():Hide() end,
+}
+
 StaticPopupDialogs[ns.POPUP_PREFIX .. "REASON"] = {
 	text = "Why is %s kill on sight? (optional)",
 	button1 = ACCEPT or "Accept",
@@ -119,7 +144,7 @@ StaticPopupDialogs[ns.POPUP_PREFIX .. "REASON"] = {
 		data = data or dialog.data
 		local eb = EditBoxOf(dialog)
 		if eb then
-			local e = data and data.key and ns.Get(data.key)
+			local e = data and ((data.key and ns.Get(data.key)) or (data.guild and ns.GetGuild(data.guild)))
 			eb:SetText(e and e.w or "")
 			eb:SetFocus()
 		end
@@ -129,7 +154,11 @@ StaticPopupDialogs[ns.POPUP_PREFIX .. "REASON"] = {
 		local eb = EditBoxOf(dialog)
 		local reason = eb and eb:GetText() or ""
 		if not data then return end
-		if data.edit then
+		if data.guild and data.edit then
+			ns.SetGuildReason(data.guild, reason)
+		elseif data.guild then
+			ns.AddGuildWithMessage(data.guild, reason)
+		elseif data.edit then
 			ns.SetReason(data.key, reason)
 		else
 			ns.AddWithMessage(data.info, reason)
@@ -150,7 +179,11 @@ StaticPopupDialogs[ns.POPUP_PREFIX .. "REMOVE"] = {
 	timeout = 0, whileDead = 1, hideOnEscape = 1, exclusive = 1,
 	OnAccept = function(dialog, data)
 		data = data or dialog.data
-		if data and data.key then ns.RemoveWithMessage(data.key) end
+		if data and data.guild then
+			ns.RemoveGuildWithMessage(data.guild)
+		elseif data and data.key then
+			ns.RemoveWithMessage(data.key)
+		end
 	end,
 }
 
@@ -170,6 +203,27 @@ function ns.AskRemove(key)
 	local e = ns.Get(key)
 	if not e then return end
 	StaticPopup_Show(ns.POPUP_PREFIX .. "REMOVE", ns.ColorName(e), nil, { key = key })
+end
+
+local function GuildText(name)
+	return "the whole guild |cffffd200<" .. name .. ">|r"
+end
+
+function ns.AskGuildReason(name)
+	name = ns.CleanGuildName(name)
+	if not name or ns.RefuseAllyGuild(name) then return end
+	local g = ns.GetGuild(name)
+	StaticPopup_Show(ns.POPUP_PREFIX .. "REASON", GuildText(g and g.n or name), nil, { guild = name, edit = g ~= nil })
+end
+
+function ns.AskRemoveGuild(name)
+	local g = ns.GetGuild(name)
+	if not g then return end
+	StaticPopup_Show(ns.POPUP_PREFIX .. "REMOVE", GuildText(g.n), nil, { guild = g.n })
+end
+
+function ns.AskAddGuild()
+	StaticPopup_Show(ns.POPUP_PREFIX .. "ADD_GUILD")
 end
 
 function ns.AskAddName()
@@ -285,6 +339,12 @@ local function RowMenu(row)
 			else
 				root:CreateButton("|cffe03c3cAdd to kill list|r", function() ns.AskReason(info) end)
 			end
+			local guild = info and info.guild
+			if guild and ns.GetGuild(guild) then
+				root:CreateButton("|cffe03c3cRemove guild <" .. guild .. "> from kill list|r", function() ns.AskRemoveGuild(guild) end)
+			elseif guild then
+				root:CreateButton("|cffe03c3cAdd the whole guild <" .. guild .. ">|r", function() ns.AskGuildReason(guild) end)
+			end
 		end)
 	elseif ns.Get(key) then
 		ns.AskRemove(key)
@@ -344,9 +404,13 @@ local function MakeRow(i)
 			if #bits > 0 then GameTooltip:AddLine(table.concat(bits, " "), 1, 1, 1) end
 			if n.guild then GameTooltip:AddLine("<" .. n.guild .. ">", 0.7, 0.7, 0.7) end
 		end
+		local g = not e and n and ns.GetGuild(n.guild)
 		if e then
 			GameTooltip:AddLine("Kill on sight" .. (e.w and (": " .. e.w) or ""), 1, 0.2, 0.2, true)
 			GameTooltip:AddLine("Added by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a), 0.6, 0.6, 0.6)
+		elseif g then
+			GameTooltip:AddLine("Kill on sight: the whole guild" .. (g.w and (": " .. g.w) or ""), 1, 0.2, 0.2, true)
+			GameTooltip:AddLine("Guild added by " .. ns.ShortSender(g.b) .. ", " .. ns.Ago(g.a), 0.6, 0.6, 0.6)
 		end
 		ns.AddStatsLines(GameTooltip, self.key)
 		GameTooltip:AddLine("Left-click: target   Right-click: kill list", 0.5, 0.8, 1)
@@ -366,13 +430,14 @@ end
 
 local function FillRowText(row, item)
 	local n, e = item.n, item.e
+	local listed = e or item.g
 	local level = (n.level and n.level > 0) and (" |cffaaaaaa" .. n.level .. "|r") or ""
 	row.name:SetText(NameColor(n.class, n.name) .. level)
 	local age = math.floor(GetTime() - n.seen)
 	local rec = ns.Enemy(item.key)
 	local score = (rec and ((rec.w or 0) + (rec.l or 0)) > 0) and ("|cff40ff40" .. rec.w .. "|r-|cffff4040" .. rec.l .. "|r ") or ""
-	row.right:SetText(score .. (e and "|cffff3030KOS|r" or (age < 5 and "now" or (age .. "s"))))
-	row.bg:SetShown(e ~= nil)
+	row.right:SetText(score .. (listed and "|cffff3030KOS|r" or (age < 5 and "now" or (age .. "s"))))
+	row.bg:SetShown(listed ~= nil)
 end
 
 -- Dungeons and raids have no enemy players to spot (names are hidden
@@ -485,7 +550,7 @@ local close = CreateFrame("Button", nil, win, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
 
 local search = CreateFrame("EditBox", ns.FRAME_PREFIX .. "Search", win, "InputBoxTemplate")
-search:SetSize(160, 20)
+search:SetSize(118, 20)
 search:SetPoint("TOPLEFT", 16, -30)
 search:SetAutoFocus(false)
 search.hint = Text(search, "GameFontDisableSmall")
@@ -507,10 +572,19 @@ local addTarget = Button("Add target", 90, function()
 	ns.AskReason(info)
 end)
 addTarget:SetPoint("LEFT", search, "RIGHT", 10, 0)
-local addName = Button("Add by name", 100, function() ns.AskAddName() end)
+local addName = Button("Add by name", 96, function() ns.AskAddName() end)
 addName:SetPoint("LEFT", addTarget, "RIGHT", 4, 0)
-local optionsBtn = Button("Options", 80, function() ns.ToggleOptions() end)
-optionsBtn:SetPoint("LEFT", addName, "RIGHT", 4, 0)
+local addGuild = Button("Add guild", 84, function() ns.AskAddGuild() end)
+addGuild:SetPoint("LEFT", addName, "RIGHT", 4, 0)
+addGuild:SetScript("OnEnter", function(self)
+	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	GameTooltip:AddLine("Add a whole guild")
+	GameTooltip:AddLine("Every member of the guild you come across counts as kill on sight. Target one of them first and their guild is filled in for you.", 1, 1, 1, true)
+	GameTooltip:Show()
+end)
+addGuild:SetScript("OnLeave", function() GameTooltip:Hide() end)
+local optionsBtn = Button("Options", 76, function() ns.ToggleOptions() end)
+optionsBtn:SetPoint("LEFT", addGuild, "RIGHT", 4, 0)
 
 local RefreshList
 local tabSeen = Button("Recently Seen", 110, function() ns.ShowPage("seen") end)
@@ -576,6 +650,7 @@ for i = 1, LIST_ROWS do
 	row.edit:SetPoint("RIGHT", -56, 0)
 	row.edit:SetText("Edit")
 	row.edit:SetScript("OnClick", function()
+		if row.guild then ns.AskGuildReason(row.guild) return end
 		if not row.key then return end
 		if ns.Get(row.key) then ns.AskEditReason(row.key) return end
 		local rec = ns.Enemy(row.key)
@@ -585,8 +660,21 @@ for i = 1, LIST_ROWS do
 	row.remove:SetSize(52, 20)
 	row.remove:SetPoint("RIGHT", -2, 0)
 	row.remove:SetText("Remove")
-	row.remove:SetScript("OnClick", function() if row.key then ns.AskRemove(row.key) end end)
+	row.remove:SetScript("OnClick", function()
+		if row.guild then ns.AskRemoveGuild(row.guild) elseif row.key then ns.AskRemove(row.key) end
+	end)
 	row:SetScript("OnEnter", function(self)
+		if self.guild then
+			local g = ns.GetGuild(self.guild)
+			if not g then return end
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:AddLine("|cffffd200<" .. g.n .. ">|r  whole guild")
+			GameTooltip:AddLine(g.w or "No reason given", 1, 0.75, 0.75, true)
+			GameTooltip:AddLine("Added by " .. ns.ShortSender(g.b) .. ", " .. ns.Ago(g.a), 0.6, 0.6, 0.6)
+			GameTooltip:AddLine("Every member you come across counts as kill on sight. The game doesn't tell addons who is in a guild, so a member is only recognised once you see them.", 1, 1, 1, true)
+			GameTooltip:Show()
+			return
+		end
 		if not self.key then return end
 		local e = ns.Get(self.key)
 		if mode == "seen" then
@@ -633,7 +721,31 @@ emptyText:SetPoint("CENTER")
 emptyText:SetWidth(400)
 emptyText:SetWordWrap(true)
 
+-- Members of a listed guild seen so far (from the Recently Seen records).
+local function MembersSeen(g)
+	local key, n = g.n:lower(), 0
+	for _, rec in pairs(ns.Enemies()) do
+		if rec.g and rec.g:lower() == key then n = n + 1 end
+	end
+	return n
+end
+
+local function FillGuildRow(row, g)
+	row.key, row.guild = nil, g.n
+	row.name:SetText("|cffffd200<" .. g.n .. ">|r  |cffaaaaaawhole guild|r")
+	row.why:SetText(g.w or "|cff777777No reason given|r")
+	row.why:SetTextColor(1, 0.75, 0.75)
+	row.by:SetText("by " .. ns.ShortSender(g.b) .. ", " .. ns.Ago(g.a))
+	local seen = MembersSeen(g)
+	row.seen:SetText(seen > 0 and (seen .. " member" .. (seen == 1 and "" or "s") .. " seen") or "no members seen yet")
+	row.edit:SetText("Edit")
+	row.edit:Show()
+	row.remove:Show()
+end
+
 local function FillKosRow(row, e)
+	if e.isGuildRow then FillGuildRow(row, e.g) return end
+	row.guild = nil
 	row.key = ns.Key(e.n, e.r)
 	local level = e.lv and e.lv > 0 and ("  |cffaaaaaa" .. e.lv .. "|r") or ""
 	local guild = e.g and ("  |cff888888<" .. e.g .. ">|r") or ""
@@ -651,7 +763,7 @@ end
 
 local function FillSeenRow(row, item)
 	local rec = item.rec
-	row.key = item.key
+	row.key, row.guild = item.key, nil
 	local level = rec.lv and rec.lv > 0 and ("  |cffaaaaaa" .. rec.lv .. "|r") or ""
 	local guild = rec.g and ("  |cff888888<" .. rec.g .. ">|r") or ""
 	row.name:SetText(ns.ColorName({ n = rec.n, r = rec.r, c = rec.c }) .. level .. guild)
@@ -677,6 +789,9 @@ RefreshList = function()
 			if Matches({ r.n, r.r, r.g, r.c, r.race, r.zone }, q) then filtered[#filtered + 1] = item end
 		end
 	else
+		for _, g in ipairs(ns.GuildList()) do
+			if Matches({ g.n, g.w, g.b }, q) then filtered[#filtered + 1] = { isGuildRow = true, g = g } end
+		end
 		for _, e in ipairs(ns.List()) do
 			if Matches({ e.n, e.r, e.g, e.w, e.b, e.c }, q) then filtered[#filtered + 1] = e end
 		end
@@ -688,7 +803,7 @@ RefreshList = function()
 			if mode == "seen" then FillSeenRow(row, item) else FillKosRow(row, item) end
 			row:Show()
 		else
-			row.key = nil
+			row.key, row.guild = nil, nil
 			row:Hide()
 		end
 	end
@@ -700,12 +815,14 @@ RefreshList = function()
 		total = n
 		win.title:SetText("|cffe03c3cRecently Seen|r  |cffaaaaaa" .. n .. " enemies|r  " .. ns.Score({ w = w, l = l }))
 	else
-		total = ns.Count()
-		win.title:SetText("|cffe03c3cBH&G Kill List|r  |cffaaaaaa" .. total .. " player" .. (total == 1 and "" or "s") .. "|r")
+		local guilds = ns.GuildCount()
+		total = ns.Count() + guilds
+		win.title:SetText("|cffe03c3cBH&G Kill List|r  |cffaaaaaa" .. ns.Count() .. " player" .. (ns.Count() == 1 and "" or "s")
+			.. (guilds > 0 and (", " .. guilds .. " guild" .. (guilds == 1 and "" or "s")) or "") .. "|r")
 	end
 	if total == 0 then
 		emptyText:SetText(mode == "seen" and "No enemy players seen yet. Everyone you come across is kept here, with your wins and losses against them."
-			or "Nobody on the list yet.\nTarget an enemy and click Add target, or right-click a player's name.")
+			or "Nobody on the list yet.\nTarget an enemy and click Add target, or right-click a player's name.\nAdd guild puts a whole guild on the list.")
 	elseif #filtered == 0 then
 		emptyText:SetText("No one matches \"" .. q .. "\".")
 	else
