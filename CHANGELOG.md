@@ -2,7 +2,7 @@
 
 Newest first. Each version has up to three sections: New, Changed, Fixed. The release button builds each GitHub release's description from this file.
 
-## Unreleased
+## 1.4.0
 
 ### New
 - A guild Blacklist, for players on our own side you'd rather not group with: people who leave dungeons early, ninja loot and so on. It's a list of its own, so nobody on it is treated as an enemy and the kill list stays exactly as it was.
@@ -14,6 +14,10 @@ Newest first. Each version has up to three sections: New, Changed, Fixed. The re
 - New options: the group and invite warnings, the chat lines, and the question when someone leaves your dungeon group can each be turned off.
 - `/kos check` and `/kos status` include the Blacklist.
 - Guildmates on 1.3.0 or older keep syncing the kill list and guilds with you as before; they just don't get the Blacklist until they update.
+
+### Changed
+- Players are shown by their full WoW: Forever name, with their realm ("Name Realm"), everywhere in the addon: the lists, Horde Scum Nearby, warnings, chat lines, tooltips and pop-ups, for players from your own realm too. "Added by" and "spotted by" show full names as well. Clicking a name to target them works as before.
+- The Horde Scum Nearby window is a little wider to fit the longer names.
 
 ## 1.3.0
 

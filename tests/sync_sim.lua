@@ -396,6 +396,9 @@ for _, l in ipairs(S1.log) do if l:find("KILL ON SIGHT") and l:find("Gankboy") t
 for _, l in ipairs(S2.log) do if l:find("Gankboy") and l:find("spotted by P1") and l:find("Goldshire") then heard = true end end
 Check(warned, "P1 got the kill-on-sight warning")
 Check(heard, "P2 was told where P1 spotted him")
+local fullNames = false
+for _, l in ipairs(S2.log) do if l:find("Gankboy Forever", 1, true) and l:find("spotted by P1 Forever", 1, true) then fullNames = true end end
+Check(fullNames, "players are shown by their full name, realm included, even on our own realm")
 local kosSound = false
 for _, snd in ipairs(S1.sounds) do if snd == "detected-kos" then kosSound = true end end
 Check(kosSound, "P1 heard the kill-on-sight sound")

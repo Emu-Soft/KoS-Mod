@@ -109,7 +109,7 @@ end
 -- Says no (and why) when someone tries to put an ally on the list.
 function ns.RefuseAlly(info)
 	if not ns.IsAlly(info) then return false end
-	ns.Print(ns.ProperName(info.name) .. " is on our side, so they can't go on the kill list.")
+	ns.Print(ns.FullName(info.name, info.realm) .. " is on our side, so they can't go on the kill list.")
 	return true
 end
 
@@ -199,7 +199,7 @@ function ns.Alert(e, info, test, quiet)
 	local levelText = (level and level > 0) and (" (" .. level .. ")") or ""
 	if ns.Setting("chat") then
 		local why = e.w and (" - " .. e.w) or ""
-		ns.Print("|cffff2020KILL ON SIGHT:|r " .. ns.ColorName(e) .. levelText .. why .. " |cff999999(added by " .. ns.ShortSender(e.b) .. ")|r")
+		ns.Print("|cffff2020KILL ON SIGHT:|r " .. ns.ColorName(e) .. levelText .. why .. " |cff999999(added by " .. ns.SenderName(e.b) .. ")|r")
 	end
 	if quiet then return end
 	if ns.Setting("sound") then ns.PlaySound("kos") end
@@ -236,7 +236,7 @@ local function Seen(info, fromCombatLog)
 		if e and not allyNoted[key] then
 			allyNoted[key] = true
 			ns.Print(ns.ColorName(e) .. " is on the kill list but is on our side. Type |cffffd200/kos remove "
-				.. ns.ProperName(e.n) .. "|r to take them off.")
+				.. ns.DisplayName(e) .. "|r to take them off.")
 		end
 		return
 	end
@@ -278,7 +278,7 @@ local function Seen(info, fromCombatLog)
 	if fresh then
 		n.whereAt = GetTime()
 		n.where = ns.WhereAmI()
-		e.seen, e.sz, e.sb = ns.Now(), n.where, ns.MyName()
+		e.seen, e.sz, e.sb = ns.Now(), n.where, ns.SenderName(ns.MyFullName())
 	end
 	if not fromCombatLog then ns.LearnDetails(key, info.class, info.guild) end
 	e = ns.Get(key) or e
@@ -507,13 +507,13 @@ end
 ns.Listen("GUILD_SIGHTING", function(key, zone, sender)
 	local e = ns.Get(key)
 	if not e then return end
-	e.seen, e.sz, e.sb = ns.Now(), zone, ns.ShortSender(sender)
+	e.seen, e.sz, e.sb = ns.Now(), zone, ns.SenderName(sender)
 	if not ns.Setting("guildSightings") then return end
 	if lastGuildNote[key] and GetTime() - lastGuildNote[key] < GUILD_NOTE_COOLDOWN then return end
 	lastGuildNote[key] = GetTime()
 	local where = (zone and zone ~= "") and (" in " .. zone) or ""
 	-- Chat only, no sound: the warning sound is for players near you.
-	ns.Print(ns.ColorName(e) .. " spotted by " .. ns.ShortSender(sender) .. where .. ".")
+	ns.Print(ns.ColorName(e) .. " spotted by " .. ns.SenderName(sender) .. where .. ".")
 	ns.Fire("SEEN", key)
 end)
 
@@ -525,14 +525,14 @@ ns.Listen("ADDED_BY_GUILD", function(_, e)
 		caughtUp = caughtUp + 1
 		return
 	end
-	ns.Print(ns.ColorName(e) .. " was added by " .. ns.ShortSender(e.b) .. (e.w and (": " .. e.w) or "."))
+	ns.Print(ns.ColorName(e) .. " was added by " .. ns.SenderName(e.b) .. (e.w and (": " .. e.w) or "."))
 end)
 ns.Listen("GUILD_ADDED_BY_GUILD", function(_, g)
-	ns.Print("the whole guild |cffffd200<" .. g.n .. ">|r was put on the list by " .. ns.ShortSender(g.b) .. (g.w and (": " .. g.w) or "."))
+	ns.Print("the whole guild |cffffd200<" .. g.n .. ">|r was put on the list by " .. ns.SenderName(g.b) .. (g.w and (": " .. g.w) or "."))
 end)
 ns.Listen("GUILD_REMOVED_BY_GUILD", function(_, g)
 	if ns.syncQuiet then return end
-	ns.Print("the guild <" .. g.n .. "> was taken off the list by " .. ns.ShortSender(g.y) .. ".")
+	ns.Print("the guild <" .. g.n .. "> was taken off the list by " .. ns.SenderName(g.y) .. ".")
 end)
 ns.Listen("SYNC_SETTLED", function()
 	if caughtUp > 0 then
@@ -558,15 +558,15 @@ local function OnUnitTooltip(tooltip)
 	local g = not e and not info.ally and ns.GetGuild(info.guild)
 	if e then
 		tooltip:AddLine("Kill on sight" .. (e.w and (": " .. e.w) or ""), 1, 0.15, 0.15, true)
-		tooltip:AddLine("BH&G Kill List, added by " .. ns.ShortSender(e.b), 0.6, 0.6, 0.6)
+		tooltip:AddLine("BH&G Kill List, added by " .. ns.SenderName(e.b), 0.6, 0.6, 0.6)
 	elseif g then
 		tooltip:AddLine("Kill on sight: the whole guild <" .. g.n .. ">" .. (g.w and (": " .. g.w) or ""), 1, 0.15, 0.15, true)
-		tooltip:AddLine("BH&G Kill List, added by " .. ns.ShortSender(g.b), 0.6, 0.6, 0.6)
+		tooltip:AddLine("BH&G Kill List, added by " .. ns.SenderName(g.b), 0.6, 0.6, 0.6)
 	end
 	local black = not ns.IsEnemy(info) and ns.GetBlack(key)
 	if black then
 		tooltip:AddLine("On the guild Blacklist: " .. (black.w or "no reason given"), 1, 0.6, 0.1, true)
-		tooltip:AddLine("BH&G Kill List, added by " .. ns.ShortSender(black.b), 0.6, 0.6, 0.6)
+		tooltip:AddLine("BH&G Kill List, added by " .. ns.SenderName(black.b), 0.6, 0.6, 0.6)
 	end
 	local rec = ns.Enemy and ns.Enemy(key)
 	if rec and (e or info.hostile) and ((rec.w or 0) + (rec.l or 0)) > 0 then
@@ -720,8 +720,8 @@ end
 function ns.TargetGuild()
 	local info = ns.ReadUnit("target")
 	if not info then return nil, "target an enemy player first." end
-	if not info.guild then return nil, ns.ProperName(info.name) .. " isn't in a guild (or the game isn't showing it)." end
-	if ns.IsAlly(info) then return nil, ns.ProperName(info.name) .. " is on our side." end
+	if not info.guild then return nil, ns.FullName(info.name, info.realm) .. " isn't in a guild (or the game isn't showing it)." end
+	if ns.IsAlly(info) then return nil, ns.FullName(info.name, info.realm) .. " is on our side." end
 	return info.guild
 end
 

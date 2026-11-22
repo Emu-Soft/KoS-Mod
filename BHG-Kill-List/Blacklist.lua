@@ -43,7 +43,7 @@ local CHAT_COOLDOWN = 600
 local function WhyNot(info)
 	if type(info) ~= "table" or type(info.name) ~= "string" then return "that isn't a player name." end
 	local key = ns.Key(info.name, info.realm)
-	local name = ns.ProperName(info.name)
+	local name = ns.FullName(info.name, info.realm)
 	if key == ns.MyFullName():lower() then return "you can't put yourself on the Blacklist." end
 	if ns.IsEnemy(info) then
 		return name .. " is on the other side. The Blacklist is for players on ours; enemies go on the kill list."
@@ -112,7 +112,7 @@ local function Warn(e, how, kind, cooldown, loud)
 	if lastWarn[id] and GetTime() - lastWarn[id] < cooldown then return end
 	lastWarn[id] = GetTime()
 	ns.Print("|cffff9900BLACKLISTED:|r " .. ns.ColorName(e) .. " " .. how .. (e.w and (" - " .. e.w) or "")
-		.. " |cff999999(added by " .. ns.ShortSender(e.b) .. ")|r")
+		.. " |cff999999(added by " .. ns.SenderName(e.b) .. ")|r")
 	if not loud then return end
 	if FlashClientIcon then pcall(FlashClientIcon) end
 	if ns.Setting("banner") and ns.ShowBanner then ns.ShowBanner(e, nil, "BLACKLISTED", how) end
@@ -265,11 +265,11 @@ ns.Listen("BLACK_ADDED_BY_GUILD", function(_, e)
 		caughtUp = caughtUp + 1
 		return
 	end
-	ns.Print(ns.ColorName(e) .. " was put on the guild Blacklist by " .. ns.ShortSender(e.b) .. (e.w and (": " .. e.w) or "."))
+	ns.Print(ns.ColorName(e) .. " was put on the guild Blacklist by " .. ns.SenderName(e.b) .. (e.w and (": " .. e.w) or "."))
 end)
 ns.Listen("BLACK_REMOVED_BY_GUILD", function(_, e)
 	if ns.syncQuiet then return end
-	ns.Print(ns.ColorName(e) .. " was taken off the guild Blacklist by " .. ns.ShortSender(e.y) .. ".")
+	ns.Print(ns.ColorName(e) .. " was taken off the guild Blacklist by " .. ns.SenderName(e.y) .. ".")
 end)
 ns.Listen("SYNC_SETTLED", function()
 	if caughtUp > 0 then

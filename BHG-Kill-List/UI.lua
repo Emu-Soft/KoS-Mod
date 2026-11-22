@@ -198,7 +198,7 @@ end)
 
 function ns.AskReason(info)
 	if ns.RefuseAlly(info) then return end
-	local shown = NameColor(info.class, info.name)
+	local shown = NameColor(info.class, ns.FullName(info.name, info.realm))
 	StaticPopup_Show(ns.POPUP_PREFIX .. "REASON", shown, nil, { info = info })
 end
 
@@ -225,11 +225,11 @@ function ns.AskBlackReason(info)
 	local key = ns.Key(info.name, info.realm)
 	if ns.GetBlack(key) then return ns.AskBlackEdit(key) end
 	if ns.RefuseBlack(info) then return end
-	StaticPopup_Show(ns.POPUP_PREFIX .. "BLACK_REASON", NameColor(info.class, ns.ProperName(info.name)), nil, { info = info })
+	StaticPopup_Show(ns.POPUP_PREFIX .. "BLACK_REASON", NameColor(info.class, ns.FullName(info.name, info.realm)), nil, { info = info })
 end
 
 function ns.AskBlackLeaver(info, reason)
-	StaticPopup_Show(ns.POPUP_PREFIX .. "BLACK_LEAVER", NameColor(info.class, ns.ProperName(info.name)), nil, { info = info, reason = reason })
+	StaticPopup_Show(ns.POPUP_PREFIX .. "BLACK_LEAVER", NameColor(info.class, ns.FullName(info.name, info.realm)), nil, { info = info, reason = reason })
 end
 
 function ns.AskBlackRemove(key)
@@ -308,7 +308,7 @@ function ns.ShowBanner(e, level, title, how)
 	if title then banner.title:SetTextColor(1, 0.6, 0.1) else banner.title:SetTextColor(1, 0.15, 0.15) end
 	banner.name:SetText(ns.ColorName(e) .. (how and ("  |cffcccccc" .. how .. "|r") or "") .. levelText .. guild)
 	local why = e.w or "No reason given"
-	banner.why:SetText(why .. "  |cff999999- added by " .. ns.ShortSender(e.b) .. "|r")
+	banner.why:SetText(why .. "  |cff999999- added by " .. ns.SenderName(e.b) .. "|r")
 	banner.left = BANNER_TIME
 	banner:SetAlpha(1)
 	banner:Show()
@@ -335,7 +335,7 @@ end
 
 local NEARBY_ROWS = 10
 local ROW_H = 16
-local NEARBY_W = 210
+local NEARBY_W = 250
 
 local nearby = CreateFrame("Frame", ns.FRAME_PREFIX .. "Nearby", UIParent, BACKDROP_TEMPLATE)
 nearby:SetSize(NEARBY_W, 22)
@@ -374,7 +374,7 @@ local function RowMenu(row)
 	if not key then return end
 	if MenuUtil and MenuUtil.CreateContextMenu then
 		MenuUtil.CreateContextMenu(row, function(_, root)
-			root:CreateTitle(info and info.name or "?")
+			root:CreateTitle(info and ns.FullName(info.name, info.realm) or "?")
 			if ns.Get(key) then
 				root:CreateButton("Edit reason", function() ns.AskEditReason(key) end)
 				root:CreateButton("|cffe03c3cRemove from kill list|r", function() ns.AskRemove(key) end)
@@ -438,7 +438,7 @@ local function MakeRow(i)
 		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
 		local n = ns.nearby[self.key]
 		local e = ns.Get(self.key)
-		GameTooltip:AddLine(e and ns.ColorName(e) or (n and NameColor(n.class, n.name)) or "?")
+		GameTooltip:AddLine(e and ns.ColorName(e) or (n and NameColor(n.class, ns.FullName(n.name, n.realm))) or "?")
 		if n then
 			local bits = {}
 			if n.level and n.level > 0 then bits[#bits + 1] = "Level " .. n.level end
@@ -449,10 +449,10 @@ local function MakeRow(i)
 		local g = not e and n and ns.GetGuild(n.guild)
 		if e then
 			GameTooltip:AddLine("Kill on sight" .. (e.w and (": " .. e.w) or ""), 1, 0.2, 0.2, true)
-			GameTooltip:AddLine("Added by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a), 0.6, 0.6, 0.6)
+			GameTooltip:AddLine("Added by " .. ns.SenderName(e.b) .. ", " .. ns.Ago(e.a), 0.6, 0.6, 0.6)
 		elseif g then
 			GameTooltip:AddLine("Kill on sight: the whole guild" .. (g.w and (": " .. g.w) or ""), 1, 0.2, 0.2, true)
-			GameTooltip:AddLine("Guild added by " .. ns.ShortSender(g.b) .. ", " .. ns.Ago(g.a), 0.6, 0.6, 0.6)
+			GameTooltip:AddLine("Guild added by " .. ns.SenderName(g.b) .. ", " .. ns.Ago(g.a), 0.6, 0.6, 0.6)
 		end
 		ns.AddStatsLines(GameTooltip, self.key)
 		GameTooltip:AddLine("Left-click: target   Right-click: kill list", 0.5, 0.8, 1)
@@ -474,7 +474,7 @@ local function FillRowText(row, item)
 	local n, e = item.n, item.e
 	local listed = e or item.g
 	local level = (n.level and n.level > 0) and (" |cffaaaaaa" .. n.level .. "|r") or ""
-	row.name:SetText(NameColor(n.class, n.name) .. level)
+	row.name:SetText(NameColor(n.class, ns.FullName(n.name, n.realm)) .. level)
 	local age = math.floor(GetTime() - n.seen)
 	local rec = ns.Enemy(item.key)
 	local score = (rec and ((rec.w or 0) + (rec.l or 0)) > 0) and ("|cff40ff40" .. rec.w .. "|r-|cffff4040" .. rec.l .. "|r ") or ""
@@ -736,7 +736,7 @@ for i = 1, LIST_ROWS do
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 			GameTooltip:AddLine("|cffffd200<" .. g.n .. ">|r  whole guild")
 			GameTooltip:AddLine(g.w or "No reason given", 1, 0.75, 0.75, true)
-			GameTooltip:AddLine("Added by " .. ns.ShortSender(g.b) .. ", " .. ns.Ago(g.a), 0.6, 0.6, 0.6)
+			GameTooltip:AddLine("Added by " .. ns.SenderName(g.b) .. ", " .. ns.Ago(g.a), 0.6, 0.6, 0.6)
 			GameTooltip:AddLine("Every member you come across counts as kill on sight. The game doesn't tell addons who is in a guild, so a member is only recognised once you see them.", 1, 1, 1, true)
 			GameTooltip:Show()
 			return
@@ -749,7 +749,7 @@ for i = 1, LIST_ROWS do
 			GameTooltip:AddLine(ns.ColorName(b) .. "  |cffff9900guild Blacklist|r")
 			if b.g then GameTooltip:AddLine("<" .. b.g .. ">", 0.7, 0.7, 0.7) end
 			GameTooltip:AddLine(b.w or "No reason given", 1, 0.8, 0.5, true)
-			GameTooltip:AddLine("Added by " .. ns.ShortSender(b.b) .. ", " .. ns.Ago(b.a), 0.6, 0.6, 0.6)
+			GameTooltip:AddLine("Added by " .. ns.SenderName(b.b) .. ", " .. ns.Ago(b.a), 0.6, 0.6, 0.6)
 			if b.gs then GameTooltip:AddLine("Last in your group " .. ns.Ago(b.gs), 0.6, 0.6, 0.6) end
 			GameTooltip:AddLine("You're warned when they're in your group, invite you or talk in chat.", 1, 1, 1, true)
 			GameTooltip:Show()
@@ -777,7 +777,7 @@ for i = 1, LIST_ROWS do
 		if e.g then GameTooltip:AddLine("<" .. e.g .. ">", 0.7, 0.7, 0.7) end
 		if e.lv or e.race then GameTooltip:AddLine(((e.lv and ("Level " .. e.lv .. " ")) or "") .. (e.race or ""), 1, 1, 1) end
 		GameTooltip:AddLine(e.w or "No reason given", 1, 0.75, 0.75, true)
-		GameTooltip:AddLine("Added by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a), 0.6, 0.6, 0.6)
+		GameTooltip:AddLine("Added by " .. ns.SenderName(e.b) .. ", " .. ns.Ago(e.a), 0.6, 0.6, 0.6)
 		if e.seen then
 			GameTooltip:AddLine("Last seen " .. ns.Ago(e.seen) .. (e.sz and e.sz ~= "" and (" in " .. e.sz) or "") .. (e.sb and (" by " .. e.sb) or ""), 0.6, 0.6, 0.6, true)
 		end
@@ -814,7 +814,7 @@ local function FillGuildRow(row, g)
 	row.name:SetText("|cffffd200<" .. g.n .. ">|r  |cffaaaaaawhole guild|r")
 	row.why:SetText(g.w or "|cff777777No reason given|r")
 	row.why:SetTextColor(1, 0.75, 0.75)
-	row.by:SetText("by " .. ns.ShortSender(g.b) .. ", " .. ns.Ago(g.a))
+	row.by:SetText("by " .. ns.SenderName(g.b) .. ", " .. ns.Ago(g.a))
 	local seen = MembersSeen(g)
 	row.seen:SetText(seen > 0 and (seen .. " member" .. (seen == 1 and "" or "s") .. " seen") or "no members seen yet")
 	row.edit:SetText("Edit")
@@ -833,7 +833,7 @@ local function FillKosRow(row, e)
 	row.why:SetTextColor(1, 0.75, 0.75)
 	local rec = ns.Enemy(row.key)
 	local score = (rec and ((rec.w or 0) + (rec.l or 0)) > 0) and (ns.Score(rec) .. "  ") or ""
-	row.by:SetText(score .. "by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a))
+	row.by:SetText(score .. "by " .. ns.SenderName(e.b) .. ", " .. ns.Ago(e.a))
 	row.seen:SetText(e.seen and ("seen " .. ns.Ago(e.seen)) or "not seen yet")
 	row.edit:SetText("Edit")
 	row.edit:Show()
@@ -863,7 +863,7 @@ local function FillBlackRow(row, e)
 	row.name:SetText(ns.ColorName(e) .. guild)
 	row.why:SetText(e.w or "|cff777777No reason given|r")
 	row.why:SetTextColor(1, 0.8, 0.5)
-	row.by:SetText("by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a))
+	row.by:SetText("by " .. ns.SenderName(e.b) .. ", " .. ns.Ago(e.a))
 	row.seen:SetText(e.gs and ("in your group " .. ns.Ago(e.gs)) or "")
 	row.edit:SetText("Edit")
 	row.edit:Show()
@@ -885,18 +885,18 @@ RefreshList = function()
 	if mode == "seen" then
 		for _, item in ipairs(ns.EnemyList()) do
 			local r = item.rec
-			if Matches({ r.n, r.r, r.g, r.c, r.race, r.zone }, q) then filtered[#filtered + 1] = item end
+			if Matches({ ns.DisplayName(r), r.g, r.c, r.race, r.zone }, q) then filtered[#filtered + 1] = item end
 		end
 	elseif mode == "black" then
 		for _, e in ipairs(ns.BlackList()) do
-			if Matches({ e.n, e.r, e.g, e.w, e.b, e.c }, q) then filtered[#filtered + 1] = e end
+			if Matches({ ns.DisplayName(e), e.g, e.w, e.b, e.c }, q) then filtered[#filtered + 1] = e end
 		end
 	else
 		for _, g in ipairs(ns.GuildList()) do
 			if Matches({ g.n, g.w, g.b }, q) then filtered[#filtered + 1] = { isGuildRow = true, g = g } end
 		end
 		for _, e in ipairs(ns.List()) do
-			if Matches({ e.n, e.r, e.g, e.w, e.b, e.c }, q) then filtered[#filtered + 1] = e end
+			if Matches({ ns.DisplayName(e), e.g, e.w, e.b, e.c }, q) then filtered[#filtered + 1] = e end
 		end
 	end
 	offset = math.max(0, math.min(offset, math.max(0, #filtered - LIST_ROWS)))

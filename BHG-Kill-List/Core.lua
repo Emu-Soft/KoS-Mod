@@ -186,19 +186,26 @@ function ns.Key(name, realm)
 	return (name .. "-" .. (StripRealm(realm) or ns.MyRealm())):lower()
 end
 
--- How a player is shown, and what /targetexact needs: "Name" for our
--- realm, "Name Realm" otherwise. Forever shows (and targets) a player
--- from elsewhere as "Xal Thorn": with a hyphen, /targetexact finds no one.
+-- A player's full name the way Forever writes it: "Name Realm", for
+-- players from our own realm too.
+function ns.FullName(name, realm)
+	if type(name) ~= "string" then return "?" end
+	return ns.ProperName(name) .. " " .. (StripRealm(realm) or ns.MyRealm())
+end
+
+-- How a player is shown everywhere in the addon.
 function ns.DisplayName(e)
 	if not e then return "?" end
+	return ns.FullName(e.n, e.r)
+end
+
+-- What /targetexact needs: "Name" for our realm, "Name Realm" otherwise.
+-- With a hyphen ("Xal-Thorn"), /targetexact finds no one.
+function ns.TargetName(e)
 	if e.r and e.r:lower() ~= ns.MyRealm():lower() then
 		return e.n .. " " .. e.r
 	end
 	return e.n
-end
-
-function ns.TargetName(e)
-	return ns.DisplayName(e)
 end
 
 function ns.ClassColor(classFile)
@@ -212,11 +219,11 @@ function ns.ColorName(e)
 	return string.format("|cff%02x%02x%02x%s|r", r * 255, g * 255, b * 255, ns.DisplayName(e))
 end
 
-function ns.ShortSender(sender)
+-- "Name-Realm" or "Name" (a guild sender, or who added an entry) -> "Name Realm".
+function ns.SenderName(sender)
 	if type(sender) ~= "string" then return "?" end
 	local name, realm = sender:match("^([^%-]+)%-(.+)$")
-	if name and StripRealm(realm) and StripRealm(realm):lower() == ns.MyRealm():lower() then return name end
-	return sender
+	return ns.FullName(name or sender, realm)
 end
 
 function ns.Ago(t)

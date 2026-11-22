@@ -116,6 +116,7 @@ Turn each part of the warning on or off (banner, sounds, chat), the sound for ev
 
 ## Good to know
 
+- **Full names.** Players are shown by their full Forever name with their realm ("Name Realm"), the same as the game writes it, including players from your own realm.
 - **Everyone shares one list.** Anyone with the addon can add or remove players, and it changes for the whole guild.
 - **Only enemies go on the list.** Players on your side can't be added: the addon checks the player itself, or by name your guild, your group and anyone it has seen on your side this session.
 - **Sharing only works within the guild**, through the game's hidden addon messages. Nothing is sent anywhere else.

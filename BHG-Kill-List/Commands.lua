@@ -97,7 +97,7 @@ local function ListGuilds()
 	end
 	ns.Print(#list .. " guild" .. (#list == 1 and "" or "s") .. " on the list:")
 	for _, g in ipairs(list) do
-		print("  |cffffd200<" .. g.n .. ">|r" .. (g.w and (" - " .. g.w) or "") .. " |cff999999(added by " .. ns.ShortSender(g.b) .. ", " .. ns.Ago(g.a) .. ")|r")
+		print("  |cffffd200<" .. g.n .. ">|r" .. (g.w and (" - " .. g.w) or "") .. " |cff999999(added by " .. ns.SenderName(g.b) .. ", " .. ns.Ago(g.a) .. ")|r")
 	end
 end
 
@@ -156,7 +156,7 @@ local function ListBlack()
 	end
 	ns.Print(#list .. " player" .. (#list == 1 and "" or "s") .. " on the guild Blacklist:")
 	for _, e in ipairs(list) do
-		print("  " .. ns.ColorName(e) .. (e.w and (" - " .. e.w) or "") .. " |cff999999(added by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a) .. ")|r")
+		print("  " .. ns.ColorName(e) .. (e.w and (" - " .. e.w) or "") .. " |cff999999(added by " .. ns.SenderName(e.b) .. ", " .. ns.Ago(e.a) .. ")|r")
 	end
 end
 
@@ -225,12 +225,12 @@ local function Handler(msg)
 		local blackKey = Find(rest, ns.GetBlack)
 		local b = blackKey and ns.GetBlack(blackKey)
 		if e then
-			ns.Print(ns.ColorName(e) .. " is on the list" .. (e.w and (": " .. e.w) or "") .. " (added by " .. ns.ShortSender(e.b) .. ", " .. ns.Ago(e.a) .. ").")
+			ns.Print(ns.ColorName(e) .. " is on the list" .. (e.w and (": " .. e.w) or "") .. " (added by " .. ns.SenderName(e.b) .. ", " .. ns.Ago(e.a) .. ").")
 		elseif g then
-			ns.Print("the whole guild <" .. g.n .. "> is on the list" .. (g.w and (": " .. g.w) or "") .. " (added by " .. ns.ShortSender(g.b) .. ", " .. ns.Ago(g.a) .. ").")
+			ns.Print("the whole guild <" .. g.n .. "> is on the list" .. (g.w and (": " .. g.w) or "") .. " (added by " .. ns.SenderName(g.b) .. ", " .. ns.Ago(g.a) .. ").")
 		end
 		if b then
-			ns.Print(ns.ColorName(b) .. " is on the guild Blacklist" .. (b.w and (": " .. b.w) or "") .. " (added by " .. ns.ShortSender(b.b) .. ", " .. ns.Ago(b.a) .. ").")
+			ns.Print(ns.ColorName(b) .. " is on the guild Blacklist" .. (b.w and (": " .. b.w) or "") .. " (added by " .. ns.SenderName(b.b) .. ", " .. ns.Ago(b.a) .. ").")
 		end
 		if not e and not g and not b then
 			ns.Print((name or rest) .. " isn't on the kill list or the Blacklist.")
