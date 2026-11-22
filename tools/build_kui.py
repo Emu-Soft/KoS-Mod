@@ -10,6 +10,10 @@ given, copies the sounds into it. K-UI's copy keeps its list in
 KainUIForeverKoSDB, plays its sounds from Kain-UI-Forever/Media/KoS, and
 names its windows KainUIForeverKoS...; everything else is the same code,
 so K-UI users and standalone users share one guild list.
+
+The built copy reports the Kill List's own version (## Version in
+BHG-Kill-List.toc), written into the file, since a toc lookup inside
+K-UI would give K-UI's version instead.
 """
 import re
 import shutil
@@ -62,9 +66,17 @@ def main():
         sys.exit(__doc__)
     toc = (ADDON / "BHG-Kill-List.toc").read_text(encoding="utf-8")
     version = re.search(r"^## Version:\s*(\S+)", toc, re.M).group(1)
+    if not re.fullmatch(r"[0-9A-Za-z._-]+", version):
+        sys.exit("unexpected toc version: " + version)
+    top = re.search(r"^## (\S+)", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), re.M)
+    if top and top.group(1) != version:
+        print("note: toc version", version, "but CHANGELOG.md starts at", top.group(1), file=sys.stderr)
     parts = [HEADER.format(version=version)]
     for f in FILES:
         parts.append(body(f, (ADDON / f).read_text(encoding="utf-8")))
+    # The toc lookup in Core.lua must not replace the version set above.
+    if not re.search(r"^ns\.VERSION = ns\.VERSION or ", parts[1], re.M):
+        sys.exit("Core.lua: ns.VERSION must start with 'ns.VERSION or' so K-UI's copy keeps its own version")
     Path(sys.argv[1]).write_text("\n".join(parts), encoding="utf-8")
     if len(sys.argv) > 2:
         media = Path(sys.argv[2])
