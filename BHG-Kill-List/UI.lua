@@ -335,7 +335,9 @@ end
 
 local NEARBY_ROWS = 10
 local ROW_H = 16
-local NEARBY_W = 250
+-- The nearby window is as wide as its longest name needs, between these.
+local NEARBY_MIN_W, NEARBY_MAX_W = 210, 320
+local NEARBY_W = NEARBY_MIN_W
 
 local nearby = CreateFrame("Frame", ns.FRAME_PREFIX .. "Nearby", UIParent, BACKDROP_TEMPLATE)
 nearby:SetSize(NEARBY_W, 22)
@@ -498,6 +500,30 @@ end
 
 local layoutPending = false
 
+-- How wide a name's text is, whatever width its font string is set to.
+local function TextWidth(fs)
+	if fs.GetUnboundedStringWidth then return fs:GetUnboundedStringWidth() or 0 end
+	local set = fs:GetWidth()
+	fs:SetWidth(0)
+	local w = fs:GetStringWidth() or 0
+	fs:SetWidth(set or 0)
+	return w
+end
+
+-- Out of combat only: the rows are secure buttons.
+local function FitNearbyWidth(count)
+	local longest = 0
+	for i = 1, count do longest = math.max(longest, TextWidth(rows[i].name)) end
+	local w = math.max(NEARBY_MIN_W, math.min(NEARBY_MAX_W, math.ceil(longest) + 60))
+	if w == NEARBY_W then return end
+	NEARBY_W = w
+	nearby:SetWidth(w)
+	for _, row in ipairs(rows) do
+		row:SetSize(w - 8, ROW_H)
+		row.name:SetWidth(w - 60)
+	end
+end
+
 local function LayoutNearby()
 	local list = ns.NearbyList()
 	if InCombatLockdown() or not EnsureRows() then
@@ -538,6 +564,7 @@ local function LayoutNearby()
 	local more = #list - count
 	nearby.footer:SetText(more > 0 and ("+" .. more .. " more") or (#list == 0 and "No enemies nearby" or ""))
 	nearby:SetHeight(20 + count * ROW_H + 16)
+	FitNearbyWidth(count)
 	nearby.title:SetText("Horde Scum Nearby" .. (#list > 0 and (" (" .. #list .. ")") or ""))
 	local want = NearbyWanted()
 	if want and not nearby:IsShown() then nearby:Show() elseif not want and nearby:IsShown() then nearby:Hide() end

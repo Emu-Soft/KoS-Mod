@@ -2,6 +2,11 @@
 
 Newest first. Each version has up to three sections: New, Changed, Fixed. The release button builds each GitHub release's description from this file.
 
+## Unreleased
+
+### Fixed
+- The Horde Scum Nearby window is back to its old width, and only grows (up to a point) when a name needs the room, instead of always being wider since 1.4.0.
+
 ## 1.4.0
 
 ### New
